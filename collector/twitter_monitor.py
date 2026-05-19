@@ -264,6 +264,47 @@ def get_original_image_url(nitter_url: str) -> str:
     return nitter_url
 
 
+def get_original_video_url(video_url: str, instance: str) -> str:
+    if not video_url:
+        return ""
+
+    try:
+        if video_url.startswith("//"):
+            absolute_url = "https:" + video_url
+        elif video_url.startswith("/"):
+            absolute_url = instance.rstrip("/") + video_url
+        else:
+            absolute_url = video_url
+
+        parsed = urlparse(absolute_url)
+        decoded_path = unquote(parsed.path)
+
+        if decoded_path.startswith("/video/"):
+            parts = decoded_path.split("/", 3)
+            if len(parts) == 4:
+                decoded_target = unquote(parts[3])
+                if decoded_target.startswith("http://") or decoded_target.startswith("https://"):
+                    return decoded_target
+                if decoded_target.startswith("//"):
+                    return "https:" + decoded_target
+                if decoded_target.startswith("video.twimg.com/"):
+                    return "https://" + decoded_target
+
+        if decoded_path.startswith("/pic/video.twimg.com/"):
+            suffix = decoded_path[len("/pic/") :]
+            return "https://" + suffix
+
+        if "video.twimg.com" in decoded_path:
+            match = re.search(r"(video\.twimg\.com/[^?#\"'<>\\s]+(?:\\?[^#\"'<>\\s]+)?)", decoded_path)
+            if match:
+                return "https://" + match.group(1)
+
+        return absolute_url
+    except Exception as exc:
+        print(f"[视频解析] 还原 URL 失败 {video_url}: {exc}")
+        return video_url
+
+
 def upload_to_imgbb(image_url: str) -> str | None:
     if not IMGBB_API_KEY:
         return None
@@ -469,14 +510,13 @@ def scrape_nitter_with_playwright(
                                     if full_poster not in images:
                                         images.append(full_poster)
 
-                            v_src = video_el.get("src", "")
+                            v_src = (
+                                video_el.get("src", "")
+                                or video_el.get("data-url", "")
+                                or video_el.get("data-src", "")
+                            )
                             if v_src:
-                                if v_src.startswith("//"):
-                                    video_url = "https:" + v_src
-                                elif v_src.startswith("/"):
-                                    video_url = instance.rstrip("/") + v_src
-                                else:
-                                    video_url = v_src
+                                video_url = get_original_video_url(v_src, instance)
                     except Exception as exc:
                         print(f"[{target}] 视频提取异常: {exc}")
 
