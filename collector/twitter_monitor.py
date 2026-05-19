@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import random
@@ -202,6 +203,21 @@ def order_instances_for_attempts(
 
     normalized_instances.sort(key=lambda item: (int(item["sort_score"]), float(item["shuffle_key"])))
     return [str(item["url"]) for item in normalized_instances]
+
+
+def select_targets_for_shard(target_rows: list[dict], shard_index: int, shard_count: int) -> list[dict]:
+    if shard_count <= 1:
+        return target_rows
+
+    selected_targets: list[dict] = []
+    for target_row in target_rows:
+        target_key = format_target(target_row["kind"], target_row["value"]).lower()
+        digest = hashlib.sha256(target_key.encode("utf-8")).hexdigest()
+        bucket = int(digest[:8], 16) % shard_count
+        if bucket == shard_index:
+            selected_targets.append(target_row)
+
+    return selected_targets
 
 
 def get_random_user_agent():
@@ -928,6 +944,13 @@ def command_monitor(args) -> int:
     runtime_penalties: dict[str, int] = {}
     retention_days = args.retention_days if args.retention_days is not None else DEFAULT_RETENTION_DAYS
     max_records = args.max_records if args.max_records is not None else DEFAULT_MAX_RECORDS
+    shard_index = args.shard_index if args.shard_index is not None else 0
+    shard_count = args.shard_count if args.shard_count is not None else 1
+
+    if shard_count <= 0:
+        raise ValueError("shard-count must be greater than 0.")
+    if shard_index < 0 or shard_index >= shard_count:
+        raise ValueError("shard-index must be between 0 and shard-count - 1.")
 
     with get_db_connection() as conn:
         if args.targets:
@@ -935,11 +958,19 @@ def command_monitor(args) -> int:
         else:
             target_rows = load_active_targets(conn)
 
+        target_rows = select_targets_for_shard(target_rows, shard_index, shard_count)
+
         if not target_rows:
-            print("[系统] 当前没有活跃订阅目标，跳过本轮监控")
+            print(
+                f"[系统] 当前分片没有活跃订阅目标，跳过本轮监控 "
+                f"(shard_index={shard_index}, shard_count={shard_count})"
+            )
             return 0
 
-        print(f"[{datetime.now()}] 开始监控，共 {len(target_rows)} 个目标")
+        print(
+            f"[{datetime.now()}] 开始监控，共 {len(target_rows)} 个目标 "
+            f"(shard_index={shard_index}, shard_count={shard_count})"
+        )
         new_records = 0
         for target_row in target_rows:
             target = format_target(target_row["kind"], target_row["value"])
@@ -1084,6 +1115,8 @@ def build_parser() -> argparse.ArgumentParser:
     monitor_parser.add_argument("--retention-days", type=int, default=None, help="保留天数")
     monitor_parser.add_argument("--max-records", type=int, default=None, help="最大保留记录数")
     monitor_parser.add_argument("--skip-cleanup", action="store_true", help="本轮监控后不执行清理")
+    monitor_parser.add_argument("--shard-index", type=int, default=0, help="当前分片编号，从 0 开始")
+    monitor_parser.add_argument("--shard-count", type=int, default=1, help="总分片数")
     monitor_parser.set_defaults(func=command_monitor)
 
     subscribe_parser = subparsers.add_parser("subscribe", help="用 API key 管理订阅列表")

@@ -15,6 +15,7 @@ psql "$DATABASE_URL" -f shared/schema.sql
 在仓库 `Settings -> Secrets and variables -> Actions` 配置：
 
 - `DATABASE_URL`
+- `IMGBB_API_KEY`
 
 首次建议按顺序手动运行：
 
@@ -26,6 +27,8 @@ psql "$DATABASE_URL" -f shared/schema.sql
    - `api_key`: 上一步产物中的 key
    - `targets`: `OpenAI,search:AI safety`
 4. `Twitter Monitor`
+   - 单节点保持默认
+   - 如果要并行采集，可在手动触发时填写 `shard_count`，例如 `3`
 
 ## 3. Vercel
 

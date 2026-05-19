@@ -12,6 +12,7 @@
 - 采集结果写入 PostgreSQL
 - Vercel 部署 `service`
 - 客户端通过 `apiKey` 管理订阅，通过 `feedToken` 消费 RSS
+- `Twitter Monitor` 支持按分片并行采集，单节点时也复用同一套逻辑
 
 ## 目录
 
@@ -77,6 +78,12 @@ DATABASE_URL=... python3 collector/twitter_monitor.py subscribe set \
 DATABASE_URL=... python3 collector/twitter_monitor.py monitor
 ```
 
+如果要本地模拟多分片采集，也可以执行：
+
+```bash
+DATABASE_URL=... python3 collector/twitter_monitor.py monitor --shard-index 0 --shard-count 3
+```
+
 ### 6. 启动服务
 
 ```bash
@@ -138,6 +145,16 @@ Authorization: Bearer x2d_xxx
 - `since`
 
 响应包含 `items` 和 `pagination`，其中 `pagination.nextCursor` 用于继续拉下一页。
+
+## GitHub Actions 分片
+
+`Twitter Monitor` 的 `workflow_dispatch` 支持输入 `shard_count`：
+
+- `1`
+  - 单节点模式，行为和现在一致
+- `2` 或更大
+  - 自动生成多个并行分片 job
+  - 每个目标会稳定落到某一个分片里，不会重复抓取
 
 ### `GET /rss/:feedToken.xml`
 
