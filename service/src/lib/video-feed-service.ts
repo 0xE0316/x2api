@@ -248,7 +248,7 @@ export async function listVideoFeed(query: VideoFeedQuery) {
         ${cursor?.id ?? null}::uuid
       )
     )
-    ORDER BY ci."sortTime" DESC, ci."storedAt" DESC, ci.score DESC, ci.id DESC
+    ORDER BY ci."sortTime" DESC, ci."storedAt" DESC, ci.id DESC
     LIMIT ${limit + 1}
   `);
 
