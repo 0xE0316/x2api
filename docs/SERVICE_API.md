@@ -476,6 +476,12 @@ curl -sS -X DELETE "$X2API_BASE/api/subscriptions" \
 - `keyword`
   - 可选
   - 在内容、原文、翻译、作者字段里模糊搜索
+- `tag`
+  - 可选，可重复，也支持逗号分隔
+  - 按标签过滤，例如 `tag=AI&tag=编程` 或 `tag=AI,编程`
+- `category`
+  - 可选，可重复，也支持逗号分隔
+  - 按分类过滤，支持分类 `slug` 或显示名，例如 `category=war,finance`
 - `since`
   - 可选
   - 只返回 `stored_at >= since` 的记录
@@ -502,6 +508,20 @@ curl -sS "$X2API_BASE/api/items?keyword=%E9%80%89%E4%B8%BE&limit=10" \
   -H "Authorization: Bearer $X2API_KEY"
 ```
 
+按多个分类过滤：
+
+```bash
+curl -sS "$X2API_BASE/api/items?category=war,finance&limit=10" \
+  -H "Authorization: Bearer $X2API_KEY"
+```
+
+按多个标签过滤：
+
+```bash
+curl -sS "$X2API_BASE/api/items?tag=AI&tag=%E7%BC%96%E7%A8%8B&limit=10" \
+  -H "Authorization: Bearer $X2API_KEY"
+```
+
 按时间过滤：
 
 ```bash
@@ -525,6 +545,8 @@ curl -sS "$X2API_BASE/api/items?limit=10&cursor=eyJ2IjoxLCJwYXlsb2FkIjp7Li4ufX0"
       "id": "item-uuid",
       "target": "search:特朗普",
       "kind": "keyword",
+      "category": "news",
+      "tags": ["特朗普", "美国政治"],
       "author": "some_author",
       "fullname": "Some Author",
       "title": null,
@@ -557,6 +579,10 @@ curl -sS "$X2API_BASE/api/items?limit=10&cursor=eyJ2IjoxLCJwYXlsb2FkIjp7Li4ufX0"
   - 当前命中的订阅目标
 - `kind`
   - `user` 或 `keyword`
+- `category`
+  - 目标分类 slug，来自 `target_profiles.category`
+- `tags`
+  - item 标签和目标画像标签的合并结果
 - `author`
   - 作者账号名，通常是 `@username`
 - `fullname`
@@ -817,8 +843,8 @@ Authorization: Bearer x2d_xxx
 
 - `limit`：默认 `10`，最大 `20`
 - `cursor`：上一页返回的游标
-- `tag`：按标签过滤
-- `category`：按分类过滤
+- `tag`：按标签过滤，可重复，也支持逗号分隔
+- `category`：按分类过滤，可重复，也支持逗号分隔；支持分类 `slug` 或显示名
 - `source`：`mixed`、`user`、`public`，默认 `mixed`
 
 响应：

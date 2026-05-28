@@ -11,6 +11,8 @@ export type VideoFeedQuery = {
   cursor?: string | null;
   tag?: string | null;
   category?: string | null;
+  tags?: string[] | null;
+  categories?: string[] | null;
   source?: VideoFeedSource;
 };
 
@@ -301,20 +303,29 @@ export async function listVideoFeed(query: VideoFeedQuery) {
   const sql = getSql();
   const limit = normalizeLimit(query.limit, { defaultLimit: 10, maxLimit: 20 });
   const cursor = decodeCursor(query.cursor, isVideoFeedCursor);
-  const normalizedTag = query.tag?.trim().toLowerCase() || null;
-  const normalizedCategory = query.category?.trim().toLowerCase() || null;
-  const categoryName = normalizedCategory
-    ? (
-        asRows<{ name: string }>(await sql`
-          SELECT name
+  const normalizedTags = [...new Set([...(query.tags ?? []), query.tag ?? ""].map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
+  const normalizedCategories = [
+    ...new Set([...(query.categories ?? []), query.category ?? ""].map((category) => category.trim().toLowerCase()).filter(Boolean)),
+  ];
+  const categoryRows =
+    normalizedCategories.length > 0
+      ? asRows<{ slug: string; name: string }>(await sql`
+          SELECT slug, name
           FROM categories
-          WHERE LOWER(slug) = ${normalizedCategory}
-             OR LOWER(name) = ${normalizedCategory}
-          LIMIT 1
-        `)[0]?.name ?? null
-      )
-    : null;
-  const normalizedCategoryName = categoryName?.trim().toLowerCase() || normalizedCategory;
+          WHERE EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(${JSON.stringify(normalizedCategories)}::jsonb) AS selected_category(name)
+            WHERE LOWER(categories.slug) = selected_category.name
+               OR LOWER(categories.name) = selected_category.name
+          )
+        `)
+      : [];
+  const normalizedCategoryFilters = [
+    ...new Set([
+      ...normalizedCategories,
+      ...categoryRows.flatMap((category) => [category.slug.trim().toLowerCase(), category.name.trim().toLowerCase()]),
+    ]),
+  ];
   const source = query.source ?? "mixed";
   const itemVideoKey = videoKeyExpression("i");
   const watchedVideoKey = videoKeyExpression("watched_item");
@@ -419,32 +430,47 @@ export async function listVideoFeed(query: VideoFeedQuery) {
             AND ${watchedVideoKey} = ${itemVideoKey}
         )
         AND (
-          ${normalizedTag}::text IS NULL
+          ${JSON.stringify(normalizedTags)}::jsonb = '[]'::jsonb
           OR EXISTS (
             SELECT 1
             FROM item_tags it
             INNER JOIN tags tag ON tag.id = it.tag_id
             WHERE it.item_id = i.id
-              AND LOWER(tag.name) = ${normalizedTag}
+              AND EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(${JSON.stringify(normalizedTags)}::jsonb) AS selected_tag(name)
+                WHERE LOWER(tag.name) = selected_tag.name
+              )
           )
           OR EXISTS (
             SELECT 1
             FROM jsonb_array_elements_text(COALESCE(tp.tags, '[]'::jsonb)) AS profile_tag(name)
-            WHERE LOWER(profile_tag.name) = ${normalizedTag}
+            WHERE EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(${JSON.stringify(normalizedTags)}::jsonb) AS selected_tag(name)
+              WHERE LOWER(profile_tag.name) = selected_tag.name
+            )
           )
         )
         AND (
-          ${normalizedCategory}::text IS NULL
+          ${JSON.stringify(normalizedCategoryFilters)}::jsonb = '[]'::jsonb
           OR EXISTS (
             SELECT 1
             FROM item_tags it
             INNER JOIN tags tag ON tag.id = it.tag_id
             WHERE it.item_id = i.id
               AND tag.type = 'category'
-              AND (LOWER(tag.name) = ${normalizedCategory} OR LOWER(tag.name) = ${normalizedCategoryName})
+              AND EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(${JSON.stringify(normalizedCategoryFilters)}::jsonb) AS selected_category(name)
+                WHERE LOWER(tag.name) = selected_category.name
+              )
           )
-          OR LOWER(COALESCE(tp.category, '')) = ${normalizedCategory}
-          OR LOWER(COALESCE(tp.category, '')) = ${normalizedCategoryName}
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(${JSON.stringify(normalizedCategoryFilters)}::jsonb) AS selected_category(name)
+            WHERE LOWER(COALESCE(tp.category, '')) = selected_category.name
+          )
         )
     ),
     deduped_items AS (

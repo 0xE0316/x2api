@@ -1,6 +1,7 @@
 import { requireClient } from "@/lib/auth";
 import { jsonError, jsonOk } from "@/lib/http";
 import { PaginationInputError } from "@/lib/pagination";
+import { parseStringListParam } from "@/lib/query-params";
 import { listVideoFeed, parseVideoFeedSource } from "@/lib/video-feed-service";
 
 function parsePositiveInt(raw: string | null, field: string) {
@@ -28,8 +29,8 @@ export async function GET(request: Request) {
       clientId: client.id,
       limit: parsePositiveInt(searchParams.get("limit"), "limit"),
       cursor: searchParams.get("cursor"),
-      tag: searchParams.get("tag"),
-      category: searchParams.get("category"),
+      tags: parseStringListParam(searchParams, "tag"),
+      categories: parseStringListParam(searchParams, "category"),
       source: parseVideoFeedSource(searchParams.get("source")),
     });
 

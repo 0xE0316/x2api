@@ -8,6 +8,8 @@ type ItemQuery = {
   cursor?: string | null;
   keyword?: string | null;
   target?: string | null;
+  tags?: string[] | null;
+  categories?: string[] | null;
   since?: string | null;
 };
 
@@ -26,6 +28,8 @@ export type ItemRecord = {
   id: string;
   target: string;
   kind: "user" | "keyword";
+  category: string | null;
+  tags: string[];
   author: string | null;
   fullname: string | null;
   title: string | null;
@@ -71,6 +75,27 @@ export async function listItems(query: ItemQuery): Promise<ListItemsResult> {
   const cursor = decodeCursor(query.cursor, isItemCursor);
   const searchText = query.keyword?.trim() ? `%${query.keyword.trim().toLowerCase()}%` : null;
   const targetFilter = query.target?.trim().toLowerCase() || null;
+  const normalizedTags = [...new Set((query.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
+  const normalizedCategories = [...new Set((query.categories ?? []).map((category) => category.trim().toLowerCase()).filter(Boolean))];
+  const categoryRows =
+    normalizedCategories.length > 0
+      ? asRows<{ slug: string; name: string }>(await sql`
+          SELECT slug, name
+          FROM categories
+          WHERE EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(${JSON.stringify(normalizedCategories)}::jsonb) AS selected_category(name)
+            WHERE LOWER(categories.slug) = selected_category.name
+               OR LOWER(categories.name) = selected_category.name
+          )
+        `)
+      : [];
+  const normalizedCategoryFilters = [
+    ...new Set([
+      ...normalizedCategories,
+      ...categoryRows.flatMap((category) => [category.slug.trim().toLowerCase(), category.name.trim().toLowerCase()]),
+    ]),
+  ];
   const sinceFilter = query.since ? new Date(query.since).toISOString() : null;
   const visibleItems = sql`
     SELECT
@@ -80,6 +105,19 @@ export async function listItems(query: ItemQuery): Promise<ListItemsResult> {
         ELSE t.value
       END AS target,
       t.kind,
+      tp.category,
+      COALESCE((
+        SELECT ARRAY_AGG(DISTINCT tag_name ORDER BY tag_name)
+        FROM (
+          SELECT tag.name AS tag_name
+          FROM item_tags it
+          INNER JOIN tags tag ON tag.id = it.tag_id
+          WHERE it.item_id = i.id
+          UNION
+          SELECT profile_tag.name AS tag_name
+          FROM jsonb_array_elements_text(COALESCE(tp.tags, '[]'::jsonb)) AS profile_tag(name)
+        ) tag_values
+      ), ARRAY[]::text[]) AS tags,
       i.author,
       i.fullname,
       i.title,
@@ -104,6 +142,7 @@ export async function listItems(query: ItemQuery): Promise<ListItemsResult> {
     FROM subscriptions s
     INNER JOIN targets t ON t.id = s.target_id
     INNER JOIN items i ON i.target_id = t.id
+    LEFT JOIN target_profiles tp ON tp.target_id = t.id
     WHERE s.client_id = ${query.clientId}
       AND (
         ${searchText}::text IS NULL
@@ -125,6 +164,49 @@ export async function listItems(query: ItemQuery): Promise<ListItemsResult> {
         ${sinceFilter}::timestamptz IS NULL
         OR i.stored_at >= ${sinceFilter}::timestamptz
       )
+      AND (
+        ${JSON.stringify(normalizedTags)}::jsonb = '[]'::jsonb
+        OR EXISTS (
+          SELECT 1
+          FROM item_tags it
+          INNER JOIN tags tag ON tag.id = it.tag_id
+          WHERE it.item_id = i.id
+            AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(${JSON.stringify(normalizedTags)}::jsonb) AS selected_tag(name)
+              WHERE LOWER(tag.name) = selected_tag.name
+            )
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(COALESCE(tp.tags, '[]'::jsonb)) AS profile_tag(name)
+          WHERE EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(${JSON.stringify(normalizedTags)}::jsonb) AS selected_tag(name)
+            WHERE LOWER(profile_tag.name) = selected_tag.name
+          )
+        )
+      )
+      AND (
+        ${JSON.stringify(normalizedCategoryFilters)}::jsonb = '[]'::jsonb
+        OR EXISTS (
+          SELECT 1
+          FROM item_tags it
+          INNER JOIN tags tag ON tag.id = it.tag_id
+          WHERE it.item_id = i.id
+            AND tag.type = 'category'
+            AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(${JSON.stringify(normalizedCategoryFilters)}::jsonb) AS selected_category(name)
+              WHERE LOWER(tag.name) = selected_category.name
+            )
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(${JSON.stringify(normalizedCategoryFilters)}::jsonb) AS selected_category(name)
+          WHERE LOWER(COALESCE(tp.category, '')) = selected_category.name
+        )
+      )
   `;
 
   const rows = asRows<ItemRow>(await sql`
@@ -140,6 +222,8 @@ export async function listItems(query: ItemQuery): Promise<ListItemsResult> {
       id,
       target,
       kind,
+      category,
+      tags,
       author,
       fullname,
       title,
@@ -207,6 +291,19 @@ export async function listItemsByFeedToken(feedToken: string, limit = 50) {
           ELSE t.value
         END AS target,
         t.kind,
+        tp.category,
+        COALESCE((
+          SELECT ARRAY_AGG(DISTINCT tag_name ORDER BY tag_name)
+          FROM (
+            SELECT tag.name AS tag_name
+            FROM item_tags it
+            INNER JOIN tags tag ON tag.id = it.tag_id
+            WHERE it.item_id = i.id
+            UNION
+            SELECT profile_tag.name AS tag_name
+            FROM jsonb_array_elements_text(COALESCE(tp.tags, '[]'::jsonb)) AS profile_tag(name)
+          ) tag_values
+        ), ARRAY[]::text[]) AS tags,
         i.author,
         i.fullname,
         i.title,
@@ -232,6 +329,7 @@ export async function listItemsByFeedToken(feedToken: string, limit = 50) {
       INNER JOIN subscriptions s ON s.client_id = c.id
       INNER JOIN targets t ON t.id = s.target_id
       INNER JOIN items i ON i.target_id = t.id
+      LEFT JOIN target_profiles tp ON tp.target_id = t.id
       WHERE c.feed_token = ${feedToken}
         AND c.status = 'active'
     ),
@@ -244,6 +342,8 @@ export async function listItemsByFeedToken(feedToken: string, limit = 50) {
       id,
       target,
       kind,
+      category,
+      tags,
       author,
       fullname,
       title,

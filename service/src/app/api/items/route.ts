@@ -2,6 +2,7 @@ import { requireClient } from "@/lib/auth";
 import { jsonError, jsonOk } from "@/lib/http";
 import { listItems } from "@/lib/item-service";
 import { PaginationInputError } from "@/lib/pagination";
+import { parseStringListParam } from "@/lib/query-params";
 
 function parsePositiveInt(raw: string | null, field: string) {
   if (raw === null) {
@@ -43,6 +44,8 @@ export async function GET(request: Request) {
       cursor: searchParams.get("cursor"),
       keyword: searchParams.get("keyword"),
       target: searchParams.get("target"),
+      tags: parseStringListParam(searchParams, "tag"),
+      categories: parseStringListParam(searchParams, "category"),
       since: parseSince(searchParams.get("since")),
     });
 
