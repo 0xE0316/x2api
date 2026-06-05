@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS items (
     guid TEXT NOT NULL,
     author TEXT,
     fullname TEXT,
+    display_author TEXT,
+    display_handle TEXT,
+    author_profile_url TEXT,
+    author_profile_platform TEXT,
     title TEXT,
     content TEXT,
     raw_content TEXT,
@@ -90,6 +94,187 @@ CREATE TABLE IF NOT EXISTS items (
 
 ALTER TABLE items ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT '2099-12-31 23:59:59+00';
 ALTER TABLE items ADD COLUMN IF NOT EXISTS video_url_expires_at TIMESTAMPTZ NOT NULL DEFAULT '2099-12-31 23:59:59+00';
+ALTER TABLE items ADD COLUMN IF NOT EXISTS display_author TEXT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS display_handle TEXT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS author_profile_url TEXT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS author_profile_platform TEXT;
+
+CREATE OR REPLACE FUNCTION x2_twitter_username(raw_value TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    username TEXT;
+BEGIN
+    username := BTRIM(COALESCE(raw_value, ''));
+    IF username = '' THEN
+        RETURN NULL;
+    END IF;
+
+    username := regexp_replace(username, '^https?://(www\.)?(twitter\.com|x\.com)/', '', 'i');
+    username := regexp_replace(username, '^@+', '');
+    username := BTRIM(username, '@/ ');
+    username := split_part(username, '/', 1);
+
+    IF username ~ '^[A-Za-z0-9_]{1,15}$' THEN
+        RETURN username;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION x2_youtube_profile_url(raw_value TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    raw TEXT;
+    match TEXT[];
+BEGIN
+    raw := BTRIM(COALESCE(raw_value, ''));
+    IF raw = '' THEN
+        RETURN NULL;
+    END IF;
+
+    raw := regexp_replace(raw, '^youtube:', '', 'i');
+
+    match := regexp_match(raw, '[?&]channel_id=([^&#]+)', 'i');
+    IF match IS NOT NULL THEN
+        RETURN 'https://www.youtube.com/channel/' || match[1];
+    END IF;
+
+    IF raw ~ '^UC[A-Za-z0-9_-]+$' THEN
+        RETURN 'https://www.youtube.com/channel/' || raw;
+    END IF;
+
+    IF raw ~ '^@[A-Za-z0-9_.-]+$' THEN
+        RETURN 'https://www.youtube.com/' || raw;
+    END IF;
+
+    match := regexp_match(raw, 'youtube\.com/channel/([^/?#]+)', 'i');
+    IF match IS NOT NULL THEN
+        RETURN 'https://www.youtube.com/channel/' || match[1];
+    END IF;
+
+    match := regexp_match(raw, '[?&]user=([^&#]+)', 'i');
+    IF match IS NOT NULL THEN
+        RETURN 'https://www.youtube.com/user/' || match[1];
+    END IF;
+
+    match := regexp_match(raw, '[?&]playlist_id=([^&#]+)', 'i');
+    IF match IS NOT NULL THEN
+        RETURN 'https://www.youtube.com/playlist?list=' || match[1];
+    END IF;
+
+    match := regexp_match(raw, 'youtube\.com/(user|c)/([^/?#]+)', 'i');
+    IF match IS NOT NULL THEN
+        RETURN 'https://www.youtube.com/' || lower(match[1]) || '/' || match[2];
+    END IF;
+
+    match := regexp_match(raw, 'youtube\.com/(@[^/?#]+)', 'i');
+    IF match IS NOT NULL THEN
+        RETURN 'https://www.youtube.com/' || match[1];
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION x2_normalized_source(source_value TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    source_key TEXT;
+BEGIN
+    source_key := lower(BTRIM(COALESCE(source_value, '')));
+    CASE source_key
+        WHEN 'x' THEN RETURN 'twitter';
+        WHEN 'twitter' THEN RETURN 'twitter';
+        WHEN 'yt' THEN RETURN 'youtube';
+        WHEN 'youtube' THEN RETURN 'youtube';
+        WHEN '91' THEN RETURN 'cg91';
+        WHEN 'cg91' THEN RETURN 'cg91';
+        WHEN '51' THEN RETURN 'baoliao51';
+        WHEN 'baoliao51' THEN RETURN 'baoliao51';
+        ELSE RETURN source_key;
+    END CASE;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION x2_source_display_name(source_value TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    source_key TEXT;
+BEGIN
+    source_key := x2_normalized_source(source_value);
+    CASE source_key
+        WHEN 'twitter' THEN RETURN 'X';
+        WHEN 'youtube' THEN RETURN 'YouTube';
+        WHEN 'heiliao' THEN RETURN '黑料';
+        WHEN 'cg91' THEN RETURN '91吃瓜';
+        WHEN 'baoliao51' THEN RETURN '51爆料';
+        WHEN 'douyin' THEN RETURN '抖阴';
+        ELSE RETURN COALESCE(NULLIF(source_key, ''), 'X');
+    END CASE;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION x2_set_item_author_presentation()
+RETURNS TRIGGER AS $$
+DECLARE
+    target_source TEXT;
+    target_kind TEXT;
+    target_value TEXT;
+    username TEXT;
+    profile_url TEXT;
+BEGIN
+    SELECT source, kind, value
+    INTO target_source, target_kind, target_value
+    FROM targets
+    WHERE id = NEW.target_id;
+
+    target_source := x2_normalized_source(target_source);
+
+    NEW.display_author := COALESCE(
+        NULLIF(BTRIM(COALESCE(NEW.fullname, '')), ''),
+        NULLIF(BTRIM(COALESCE(NEW.author, '')), ''),
+        NULLIF(BTRIM(COALESCE(target_value, '')), ''),
+        x2_source_display_name(target_source)
+    );
+
+    IF target_source = 'twitter' THEN
+        username := COALESCE(
+            x2_twitter_username(NEW.author),
+            x2_twitter_username(target_value),
+            x2_twitter_username(NEW.x_url),
+            x2_twitter_username(NEW.link)
+        );
+        NEW.display_handle := CASE
+            WHEN NULLIF(BTRIM(COALESCE(NEW.fullname, '')), '') IS NOT NULL AND username IS NOT NULL
+            THEN '@' || username
+            ELSE NULL
+        END;
+        NEW.author_profile_url := CASE WHEN username IS NOT NULL THEN 'https://x.com/' || username ELSE NULL END;
+        NEW.author_profile_platform := CASE WHEN username IS NOT NULL THEN 'X' ELSE NULL END;
+    ELSIF target_source = 'youtube' THEN
+        profile_url := COALESCE(
+            x2_youtube_profile_url('youtube:' || COALESCE(target_value, '')),
+            x2_youtube_profile_url(NEW.link)
+        );
+        NEW.display_handle := NULL;
+        NEW.author_profile_url := profile_url;
+        NEW.author_profile_platform := CASE WHEN profile_url IS NOT NULL THEN 'YouTube' ELSE NULL END;
+    ELSE
+        NEW.display_handle := NULL;
+        NEW.author_profile_url := NULL;
+        NEW.author_profile_platform := NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_items_author_presentation ON items;
+CREATE TRIGGER trg_items_author_presentation
+BEFORE INSERT OR UPDATE OF target_id, author, fullname, link, x_url
+ON items
+FOR EACH ROW
+EXECUTE FUNCTION x2_set_item_author_presentation();
 
 CREATE INDEX IF NOT EXISTS idx_targets_kind_value ON targets (kind, normalized_value);
 CREATE INDEX IF NOT EXISTS idx_targets_source_kind_value ON targets (source, kind, normalized_value);

@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { decodeCursor, encodeCursor } from "@/lib/pagination";
-import { mergeVideoFeedCandidatePools, selectDiverseVideoItems } from "@/lib/video-feed-service";
+import {
+  buildVideoFeedNextCursorPayload,
+  compactVideoFeedCursorSeenValues,
+  mergeVideoFeedCandidatePools,
+  selectDiverseVideoItems,
+} from "@/lib/video-feed-service";
 
 type FeedCursor = {
   sortTime: string;
@@ -219,4 +224,55 @@ test("mergeVideoFeedCandidatePools sorts candidates and removes duplicates", () 
     merged.map((item) => item.id),
     ["public-new", "public-duplicate-video", "same-id"],
   );
+});
+
+test("buildVideoFeedNextCursorPayload carries keyset boundary and seen identities", () => {
+  const payload = buildVideoFeedNextCursorPayload({
+    seenIds: ["old-id"],
+    seenGuids: ["old-guid"],
+    seenVideoKeys: ["old-video"],
+    items: [
+      {
+        id: "first",
+        guid: "first-guid",
+        videoKey: "youtube:first",
+        sortTime: "2026-06-04T11:00:00.000Z",
+        storedAt: "2026-06-04T11:00:00.000Z",
+        author: "Alice",
+        target: "youtube:UCfirst",
+      },
+      {
+        id: "second",
+        guid: "second-guid",
+        videoKey: "youtube:second",
+        sortTime: "2026-06-04T10:00:00.000Z",
+        storedAt: "2026-06-04T10:00:00.000Z",
+        author: "Bob",
+        target: "youtube:UCsecond",
+      },
+    ],
+  });
+
+  assert.deepEqual(payload, {
+    sortTime: "2026-06-04T10:00:00.000Z",
+    storedAt: "2026-06-04T10:00:00.000Z",
+    id: "second",
+    seenIds: ["old-id", "first", "second"],
+    seenGuids: ["old-guid", "first-guid", "second-guid"],
+    seenVideoKeys: ["old-video", "youtube:first", "youtube:second"],
+    lastAuthor: "bob",
+    lastTarget: "youtube:ucsecond",
+  });
+});
+
+test("compactVideoFeedCursorSeenValues keeps the newest unique values", () => {
+  const values = Array.from({ length: 130 }, (_, index) => `id-${index}`);
+  const compacted = compactVideoFeedCursorSeenValues([...values, "id-10", " id-129 "]);
+
+  assert.equal(compacted.length, 120);
+  assert.equal(compacted[0], "id-11");
+  assert.equal(compacted.at(-1), "id-129");
+  assert.equal(compacted.includes("id-0"), false);
+  assert.equal(compacted.includes("id-10"), true);
+  assert.equal(compacted.filter((value) => value === "id-129").length, 1);
 });

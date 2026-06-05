@@ -1,6 +1,7 @@
 import { getSql } from "@/lib/db";
 import { buildCursorPage, decodeCursor, normalizeLimit } from "@/lib/pagination";
 import { asRows } from "@/lib/sql-result";
+import { resolveAuthorPresentation, type AuthorPresentation } from "@/lib/author-presentation";
 
 type ItemQuery = {
   clientId: string;
@@ -24,7 +25,7 @@ export type ListItemsResult = {
   pagination: ItemPagination;
 };
 
-export type ItemRecord = {
+type ItemRecordBase = {
   id: string;
   target: string;
   source: "twitter" | "youtube" | "heiliao" | "cg91" | "baoliao51" | "douyin";
@@ -50,15 +51,19 @@ export type ItemRecord = {
   isRetweet: boolean;
 };
 
+export type ItemRecord = ItemRecordBase & AuthorPresentation;
+
 type ItemCursor = {
   sortTime: string;
   storedAt: string;
   id: string;
 };
 
-type ItemRow = ItemRecord & {
+type ItemRow = ItemRecordBase & {
   sortTime: string;
-};
+} & Partial<AuthorPresentation>;
+
+type ItemRecordRow = ItemRecordBase & Partial<AuthorPresentation>;
 
 function isItemCursor(value: unknown): value is ItemCursor {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -251,6 +256,10 @@ export async function listItems(query: ItemQuery): Promise<ListItemsResult> {
       ), ARRAY[]::text[]) AS tags,
       i.author,
       i.fullname,
+      i.display_author AS "displayAuthor",
+      i.display_handle AS "displayHandle",
+      i.author_profile_url AS "authorProfileUrl",
+      i.author_profile_platform AS "authorProfilePlatform",
       i.title,
       i.content,
       i.raw_content AS "rawContent",
@@ -287,7 +296,10 @@ export async function listItems(query: ItemQuery): Promise<ListItemsResult> {
   });
 
   return {
-    items: page.items.map(({ sortTime: _sortTime, ...item }) => item),
+    items: page.items.map(({ sortTime: _sortTime, ...item }) => ({
+      ...item,
+      ...resolveAuthorPresentation(item),
+    })),
     pagination: {
       limit,
       nextCursor: page.pagination.nextCursor,
@@ -300,7 +312,7 @@ export async function listItemsByFeedToken(feedToken: string, limit = 50) {
   const sql = getSql();
   const normalizedLimit = normalizeLimit(limit);
 
-  const rows = asRows<ItemRecord>(await sql`
+  const rows = asRows<ItemRecordRow>(await sql`
     WITH visible_items AS (
       SELECT
         i.id,
@@ -331,6 +343,10 @@ export async function listItemsByFeedToken(feedToken: string, limit = 50) {
         ), ARRAY[]::text[]) AS tags,
         i.author,
         i.fullname,
+        i.display_author AS "displayAuthor",
+        i.display_handle AS "displayHandle",
+        i.author_profile_url AS "authorProfileUrl",
+        i.author_profile_platform AS "authorProfilePlatform",
         i.title,
         i.content,
         i.raw_content AS "rawContent",
@@ -381,6 +397,10 @@ export async function listItemsByFeedToken(feedToken: string, limit = 50) {
       tags,
       author,
       fullname,
+      "displayAuthor",
+      "displayHandle",
+      "authorProfileUrl",
+      "authorProfilePlatform",
       title,
       content,
       "rawContent",
@@ -400,5 +420,8 @@ export async function listItemsByFeedToken(feedToken: string, limit = 50) {
     LIMIT ${normalizedLimit}
   `);
 
-  return rows;
+  return rows.map((item) => ({
+    ...item,
+    ...resolveAuthorPresentation(item),
+  }));
 }

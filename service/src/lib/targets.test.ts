@@ -145,6 +145,52 @@ test("parseTargets accepts explicit YouTube object targets", () => {
   ]);
 });
 
+test("parseTargets normalizes explicit source aliases", () => {
+  assert.deepEqual(parseTargets([{ source: "x", kind: "user", target: "OpenAI", category: "tech" }]), [
+    {
+      source: "twitter",
+      kind: "user",
+      value: "OpenAI",
+      normalizedValue: "openai",
+      category: "tech",
+      tags: [],
+    },
+  ]);
+
+  assert.deepEqual(parseTargets([{ source: "yt", kind: "channel", target: "UCE_M8A5yxnLfW0KghEeajjw", category: "tech" }]), [
+    {
+      source: "youtube",
+      kind: "channel",
+      value: "UCE_M8A5yxnLfW0KghEeajjw",
+      normalizedValue: "uce_m8a5yxnlfw0kgheeajjw",
+      category: "tech",
+      tags: [],
+    },
+  ]);
+
+  assert.deepEqual(parseTargets([{ source: "91", kind: "site", target: "www.91cg1.com", category: "adult" }]), [
+    {
+      source: "cg91",
+      kind: "site",
+      value: "https://www.91cg1.com",
+      normalizedValue: "www.91cg1.com",
+      category: "adult",
+      tags: [],
+    },
+  ]);
+
+  assert.deepEqual(parseTargets([{ source: "51", kind: "site", target: "www.51baoliao01.com", category: "adult" }]), [
+    {
+      source: "baoliao51",
+      kind: "site",
+      value: "https://www.51baoliao01.com",
+      normalizedValue: "www.51baoliao01.com",
+      category: "adult",
+      tags: [],
+    },
+  ]);
+});
+
 test("parseTargets accepts explicit YouTube feed URL object targets", () => {
   const targets = parseTargets([
     {

@@ -1,6 +1,7 @@
 import { getSql, type QueryChunk } from "@/lib/db";
 import { decodeCursor, encodeCursor, normalizeLimit } from "@/lib/pagination";
 import { asRows } from "@/lib/sql-result";
+import { resolveAuthorPresentation, type AuthorPresentation } from "@/lib/author-presentation";
 
 export type VideoFeedSource = "user" | "public" | "mixed";
 export type VideoEventType = "impression" | "play" | "finish" | "like" | "dislike" | "skip" | "share";
@@ -16,7 +17,7 @@ export type VideoFeedQuery = {
   source?: VideoFeedSource;
 };
 
-export type VideoFeedItem = {
+type VideoFeedItemBase = {
   id: string;
   videoUrl: string;
   coverUrl: string | null;
@@ -48,6 +49,8 @@ export type VideoFeedItem = {
   };
 };
 
+export type VideoFeedItem = VideoFeedItemBase & AuthorPresentation;
+
 export type VideoCategory = {
   slug: string;
   name: string;
@@ -67,11 +70,11 @@ type VideoFeedCursor = {
   lastTarget?: string | null;
 };
 
-type VideoFeedRow = VideoFeedItem & {
+type VideoFeedRow = VideoFeedItemBase & {
   guid: string;
   videoKey: string;
   sortTime: string;
-};
+} & Partial<AuthorPresentation>;
 
 type VideoFeedTimeBucket = "recent" | "week" | "older";
 type VideoFeedCandidatePool = "all" | "user" | "public";
@@ -97,6 +100,7 @@ type DiversityState = {
 
 const MAX_AUTHOR_PER_PAGE = 2;
 const MAX_TARGET_PER_PAGE = 3;
+const MAX_CURSOR_SEEN_VALUES = 120;
 
 function isVideoFeedCursor(value: unknown): value is VideoFeedCursor {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -124,6 +128,62 @@ function isVideoFeedCursor(value: unknown): value is VideoFeedCursor {
 
 function normalizeDiversityKey(value: string | null | undefined) {
   return value?.trim().toLowerCase() || null;
+}
+
+export function compactVideoFeedCursorSeenValues(values: string[]) {
+  const compacted: string[] = [];
+  const seen = new Set<string>();
+
+  for (let index = values.length - 1; index >= 0 && compacted.length < MAX_CURSOR_SEEN_VALUES; index -= 1) {
+    const value = values[index]?.trim();
+    const key = normalizeDiversityKey(value);
+    if (!value || !key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    compacted.push(value);
+  }
+
+  return compacted.reverse();
+}
+
+export function buildVideoFeedNextCursorPayload(input: {
+  seenIds: string[];
+  seenGuids: string[];
+  seenVideoKeys: string[];
+  items: Array<{
+    id: string;
+    guid?: string | null;
+    videoKey?: string | null;
+    sortTime: string;
+    storedAt: string;
+    author?: string | null;
+    fullname?: string | null;
+    target: string;
+  }>;
+}) {
+  const lastItem = input.items[input.items.length - 1];
+  if (!lastItem) {
+    return null;
+  }
+
+  return {
+    sortTime: lastItem.sortTime,
+    storedAt: lastItem.storedAt,
+    id: lastItem.id,
+    seenIds: compactVideoFeedCursorSeenValues([...input.seenIds, ...input.items.map((item) => item.id)]),
+    seenGuids: compactVideoFeedCursorSeenValues([
+      ...input.seenGuids,
+      ...input.items.map((item) => item.guid).filter((guid): guid is string => typeof guid === "string" && guid.length > 0),
+    ]),
+    seenVideoKeys: compactVideoFeedCursorSeenValues([
+      ...input.seenVideoKeys,
+      ...input.items.map((item) => item.videoKey).filter((videoKey): videoKey is string => typeof videoKey === "string" && videoKey.length > 0),
+    ]),
+    lastAuthor: getAuthorKey(lastItem) ?? null,
+    lastTarget: normalizeDiversityKey(lastItem.target) ?? null,
+  };
 }
 
 function getAuthorKey(item: VideoFeedDiversityItem) {
@@ -393,9 +453,9 @@ export async function listVideoFeed(query: VideoFeedQuery) {
   const source = query.source ?? "mixed";
   const itemVideoKey = videoKeyExpression("i");
   const watchedVideoKey = videoKeyExpression("watched_item");
-  const seenIds = [...new Set(cursor?.seenIds ?? [])];
-  const seenGuids = [...new Set(cursor?.seenGuids ?? [])];
-  const seenVideoKeys = [...new Set(cursor?.seenVideoKeys ?? [])];
+  const seenIds = compactVideoFeedCursorSeenValues(cursor?.seenIds ?? []);
+  const seenGuids = compactVideoFeedCursorSeenValues(cursor?.seenGuids ?? []);
+  const seenVideoKeys = compactVideoFeedCursorSeenValues(cursor?.seenVideoKeys ?? []);
   const candidateLimit = Math.max(limit * 3, 30);
   const publicCandidateLimit = Math.max(limit * 2, 20);
 
@@ -414,6 +474,10 @@ export async function listVideoFeed(query: VideoFeedQuery) {
         COALESCE(i.translated_content, i.content, i.raw_content) AS caption,
         i.author,
         i.fullname,
+        i.display_author AS "displayAuthor",
+        i.display_handle AS "displayHandle",
+        i.author_profile_url AS "authorProfileUrl",
+        i.author_profile_platform AS "authorProfilePlatform",
         i.x_url AS "xUrl",
         i.link,
         i.published_at AS "publishedAt",
@@ -558,6 +622,10 @@ export async function listVideoFeed(query: VideoFeedQuery) {
       ci.caption,
       ci.author,
       ci.fullname,
+      ci."displayAuthor",
+      ci."displayHandle",
+      ci."authorProfileUrl",
+      ci."authorProfilePlatform",
       ci."xUrl",
       ci.link,
       ci."publishedAt",
@@ -656,29 +724,19 @@ export async function listVideoFeed(query: VideoFeedQuery) {
   await appendFromBucket("older", false, false);
 
   const items = selected.slice(0, limit);
-  const cursorSeenIds = [...seenIds, ...items.map((item) => item.id)];
-  const cursorSeenGuids = [
-    ...seenGuids,
-    ...items.map((item) => item.guid).filter((guid): guid is string => typeof guid === "string" && guid.length > 0),
-  ];
-  const cursorSeenVideoKeys = [
-    ...seenVideoKeys,
-    ...items.map((item) => item.videoKey).filter((videoKey): videoKey is string => typeof videoKey === "string" && videoKey.length > 0),
-  ];
-  const lastItem = items[items.length - 1];
-  const nextCursor =
-    items.length > 0
-      ? encodeCursor({
-          seenIds: cursorSeenIds,
-          seenGuids: cursorSeenGuids,
-          seenVideoKeys: cursorSeenVideoKeys,
-          lastAuthor: lastItem ? (getAuthorKey(lastItem) ?? null) : null,
-          lastTarget: lastItem ? (normalizeDiversityKey(lastItem.target) ?? null) : null,
-        })
-      : null;
+  const nextCursorPayload = buildVideoFeedNextCursorPayload({
+    seenIds,
+    seenGuids,
+    seenVideoKeys,
+    items,
+  });
+  const nextCursor = nextCursorPayload ? encodeCursor(nextCursorPayload) : null;
 
   return {
-    items: items.map(({ guid: _guid, sortTime: _sortTime, ...item }) => item),
+    items: items.map(({ guid: _guid, sortTime: _sortTime, ...item }) => ({
+      ...item,
+      ...resolveAuthorPresentation(item),
+    })),
     pagination: {
       limit,
       nextCursor,

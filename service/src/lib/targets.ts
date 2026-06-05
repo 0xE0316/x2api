@@ -416,10 +416,25 @@ function normalizeTargetSource(rawSource: unknown): TargetSource {
     throw new Error("Target source must be a string.");
   }
   const source = rawSource.trim().toLowerCase();
-  if (source === "twitter" || source === "youtube" || source === "heiliao" || source === "cg91" || source === "baoliao51" || source === "douyin") {
-    return source;
+  switch (source) {
+    case "x":
+    case "twitter":
+      return "twitter";
+    case "yt":
+    case "youtube":
+      return "youtube";
+    case "91":
+    case "cg91":
+      return "cg91";
+    case "51":
+    case "baoliao51":
+      return "baoliao51";
+    case "heiliao":
+    case "douyin":
+      return source;
+    default:
+      throw new Error("Unsupported target source.");
   }
-  throw new Error("Unsupported target source.");
 }
 
 function normalizeTargetKind(rawKind: unknown, source: TargetSource): TargetKind | null {
