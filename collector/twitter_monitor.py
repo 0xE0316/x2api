@@ -2634,6 +2634,7 @@ def monitor_cg91_site(conn, *, base_url: str, max_pages: int, retention_hours: i
     inserted = 0
     updated = 0
     verified_count = 0
+    parsed_videos = 0
     skipped_existing = 0
     skipped_unverified = 0
     pages = 0
@@ -2645,7 +2646,13 @@ def monitor_cg91_site(conn, *, base_url: str, max_pages: int, retention_hours: i
         page_inserted = 0
         page_existing = 0
         page_old = 0
+        page_updated = 0
+        page_verified = 0
+        page_unverified = 0
+        page_parsed_videos = 0
+        print(f"[91cg] page={pages} list_items={len(list_items)} url={page_url}")
         if not list_items:
+            print(f"[91cg] page={pages} empty_list stop=true")
             break
         for list_item in list_items:
             if list_item.get("published_at") and list_item["published_at"] < cutoff:
@@ -2654,6 +2661,8 @@ def monitor_cg91_site(conn, *, base_url: str, max_pages: int, retention_hours: i
             detail = parse_cg91_detail_page(list_item["url"], list_item)
             if not detail["players"]:
                 continue
+            page_parsed_videos += len(detail["players"])
+            parsed_videos += len(detail["players"])
             for player in detail["players"]:
                 latest_guid = latest_guid or player["guid"]
                 if target_row and item_exists_for_guid(conn, str(target_row["id"]), player["guid"]):
@@ -2664,9 +2673,11 @@ def monitor_cg91_site(conn, *, base_url: str, max_pages: int, retention_hours: i
                     verified = verify_heiliao_hls_url(player["video_url"], detail["url"])
                 except Exception as exc:
                     skipped_unverified += 1
+                    page_unverified += 1
                     print(f"[91cg] skip unverified {player['guid']}: {exc}")
                     continue
                 verified_count += 1
+                page_verified += 1
                 if dry_run:
                     samples.append({"guid": player["guid"], "title": player.get("video_title"), "link": detail["url"], "published_at": detail["published_at"].isoformat() if detail.get("published_at") else None, "video_url": verified["video_url"], "video_url_expires_at": verified["video_url_expires_at"].isoformat()})
                     continue
@@ -2675,14 +2686,19 @@ def monitor_cg91_site(conn, *, base_url: str, max_pages: int, retention_hours: i
                     page_inserted += 1
                 else:
                     updated += 1
+                    page_updated += 1
         if target_row:
             upsert_crawl_state(conn, target_row["id"], last_guid=latest_guid, last_error=None, success=True)
+        print(
+            f"[91cg] page={pages} parsed_videos={page_parsed_videos} verified={page_verified} "
+            f"inserted={page_inserted} updated={page_updated} existing={page_existing} old={page_old} unverified={page_unverified}"
+        )
         if not next_url:
             break
         if page_inserted == 0 and (page_existing > 0 or page_old == len(list_items)):
             break
         page_url = next_url
-    return {"pages": pages, "verified": verified_count, "inserted": inserted, "updated": updated, "skipped_existing": skipped_existing, "skipped_unverified": skipped_unverified, "samples": samples[:10]}
+    return {"pages": pages, "parsed_videos": parsed_videos, "verified": verified_count, "inserted": inserted, "updated": updated, "skipped_existing": skipped_existing, "skipped_unverified": skipped_unverified, "samples": samples[:10]}
 
 
 def refresh_cg91_playback_urls(conn, limit: int, refresh_window_minutes: int, critical_window_minutes: int) -> dict[str, int]:
@@ -2859,20 +2875,24 @@ def monitor_baoliao51_site(conn, *, base_url: str, max_pages: int, retention_hou
     target_row = None if dry_run else ensure_baoliao51_target(conn, base_url, public_pool=public_pool)
     page_url = base_url + "/"
     cutoff = now_utc() - timedelta(hours=retention_hours)
-    inserted = updated = verified_count = skipped_existing = skipped_unverified = pages = 0
+    inserted = updated = parsed_videos = verified_count = skipped_existing = skipped_unverified = pages = 0
     samples = []
     latest_guid = None
     for _ in range(max_pages):
         pages += 1
         list_items, next_url = parse_baoliao51_list_page(base_url, page_url)
-        page_inserted = page_existing = page_old = 0
+        page_inserted = page_existing = page_old = page_updated = page_verified = page_unverified = page_parsed_videos = 0
+        print(f"[51baoliao] page={pages} list_items={len(list_items)} url={page_url}")
         if not list_items:
+            print(f"[51baoliao] page={pages} empty_list stop=true")
             break
         for list_item in list_items:
             if list_item.get("published_at") and list_item["published_at"] < cutoff:
                 page_old += 1
                 continue
             detail = parse_baoliao51_detail_page(list_item["url"], list_item)
+            page_parsed_videos += len(detail["players"])
+            parsed_videos += len(detail["players"])
             for player in detail["players"]:
                 latest_guid = latest_guid or player["guid"]
                 if target_row and item_exists_for_guid(conn, str(target_row["id"]), player["guid"]):
@@ -2880,20 +2900,25 @@ def monitor_baoliao51_site(conn, *, base_url: str, max_pages: int, retention_hou
                 try:
                     verified = verify_heiliao_hls_url(player["video_url"], detail["url"])
                 except Exception as exc:
-                    skipped_unverified += 1; print(f"[51baoliao] skip unverified {player['guid']}: {exc}"); continue
+                    skipped_unverified += 1; page_unverified += 1; print(f"[51baoliao] skip unverified {player['guid']}: {exc}"); continue
                 verified_count += 1
+                page_verified += 1
                 if dry_run:
                     samples.append({"guid": player["guid"], "title": player.get("video_title"), "link": detail["url"], "published_at": detail["published_at"].isoformat() if detail.get("published_at") else None, "video_url": verified["video_url"], "video_url_expires_at": verified["video_url_expires_at"].isoformat()}); continue
                 if upsert_baoliao51_video_item(conn, target_row, detail, player, verified, retention_hours):
                     inserted += 1; page_inserted += 1
                 else:
-                    updated += 1
+                    updated += 1; page_updated += 1
         if target_row:
             upsert_crawl_state(conn, target_row["id"], last_guid=latest_guid, last_error=None, success=True)
+        print(
+            f"[51baoliao] page={pages} parsed_videos={page_parsed_videos} verified={page_verified} "
+            f"inserted={page_inserted} updated={page_updated} existing={page_existing} old={page_old} unverified={page_unverified}"
+        )
         if not next_url or (page_inserted == 0 and (page_existing > 0 or page_old == len(list_items))):
             break
         page_url = next_url
-    return {"pages": pages, "verified": verified_count, "inserted": inserted, "updated": updated, "skipped_existing": skipped_existing, "skipped_unverified": skipped_unverified, "samples": samples[:10]}
+    return {"pages": pages, "parsed_videos": parsed_videos, "verified": verified_count, "inserted": inserted, "updated": updated, "skipped_existing": skipped_existing, "skipped_unverified": skipped_unverified, "samples": samples[:10]}
 
 
 def refresh_baoliao51_playback_urls(conn, limit: int, refresh_window_minutes: int, critical_window_minutes: int) -> dict[str, int]:
@@ -3380,21 +3405,29 @@ def monitor_douyin_site(conn, *, base_url: str, max_pages: int, retention_hours:
     base_url = normalize_douyin_target_value(base_url)
     target_row = None if dry_run else ensure_douyin_target(conn, base_url, public_pool=public_pool)
     cutoff = now_utc() - timedelta(hours=retention_hours)
-    inserted = updated = verified_count = skipped_existing = skipped_unverified = skipped_ad = skipped_old = pages = 0
+    inserted = updated = parsed_items = verified_count = skipped_existing = skipped_unverified = skipped_ad = skipped_old = pages = 0
     samples = []
     latest_guid = None
     for page in range(1, max_pages + 1):
         pages += 1
         page_payload = parse_douyin_recommend_page(base_url, page)
         raw_items = page_payload["items"]
+        print(
+            f"[douyin] page={page} raw_items={len(raw_items)} current_page={page_payload['current_page']} "
+            f"last_page={page_payload['last_page']} total={page_payload['total']}"
+        )
         if not raw_items:
+            print(f"[douyin] page={page} empty_list stop=true")
             break
-        page_inserted = page_existing = page_old = 0
+        page_inserted = page_existing = page_old = page_updated = page_verified = page_unverified = page_skipped_ad = page_parsed_items = 0
         for raw_item in raw_items:
             item = normalize_douyin_item(base_url, raw_item)
             if not item:
                 skipped_ad += 1
+                page_skipped_ad += 1
                 continue
+            parsed_items += 1
+            page_parsed_items += 1
             latest_guid = latest_guid or item["guid"]
             if item["published_at"] < cutoff:
                 skipped_old += 1
@@ -3408,9 +3441,11 @@ def monitor_douyin_site(conn, *, base_url: str, max_pages: int, retention_hours:
                 verified = verify_douyin_video(item)
             except Exception as exc:
                 skipped_unverified += 1
+                page_unverified += 1
                 print(f"[douyin] skip unverified {item['guid']}: {exc}")
                 continue
             verified_count += 1
+            page_verified += 1
             if dry_run:
                 samples.append({"guid": item["guid"], "title": item.get("title"), "published_at": item["published_at"].isoformat(), "video_url": verified["video_url"], "video_url_expires_at": verified["video_url_expires_at"].isoformat()})
                 continue
@@ -3419,13 +3454,19 @@ def monitor_douyin_site(conn, *, base_url: str, max_pages: int, retention_hours:
                 page_inserted += 1
             else:
                 updated += 1
+                page_updated += 1
         if target_row:
             upsert_crawl_state(conn, target_row["id"], last_guid=latest_guid, last_error=None, success=True)
+        print(
+            f"[douyin] page={page} parsed_items={page_parsed_items} verified={page_verified} "
+            f"inserted={page_inserted} updated={page_updated} existing={page_existing} old={page_old} "
+            f"ad_or_invalid={page_skipped_ad} unverified={page_unverified}"
+        )
         if page_payload["current_page"] >= page_payload["last_page"]:
             break
         if page_inserted == 0 and (page_existing > 0 or page_old == len(raw_items)):
             break
-    return {"pages": pages, "verified": verified_count, "inserted": inserted, "updated": updated, "skipped_existing": skipped_existing, "skipped_unverified": skipped_unverified, "skipped_ad": skipped_ad, "skipped_old": skipped_old, "samples": samples[:10]}
+    return {"pages": pages, "parsed_items": parsed_items, "verified": verified_count, "inserted": inserted, "updated": updated, "skipped_existing": skipped_existing, "skipped_unverified": skipped_unverified, "skipped_ad": skipped_ad, "skipped_old": skipped_old, "samples": samples[:10]}
 
 
 def refresh_douyin_playback_urls(conn, limit: int, refresh_window_minutes: int, critical_window_minutes: int) -> dict[str, int]:
