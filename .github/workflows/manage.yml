@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: '执行动作: register_client / subscribe_add / subscribe_remove / subscribe_set / subscribe_list / query'
+        description: '执行动作: apply_schema / register_client / subscribe_add / subscribe_remove / subscribe_set / subscribe_list / query'
         required: true
         default: 'query'
       api_key:
@@ -74,6 +74,9 @@ jobs:
         run: |
           mkdir -p ../data/query_results
           case "$INPUT_ACTION" in
+            apply_schema)
+              python ../scripts/apply_schema.py
+              ;;
             register_client)
               cmd=(python twitter_monitor.py register-client)
               if [[ -n "$INPUT_LABEL" ]]; then
