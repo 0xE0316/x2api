@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { decodeCursor, encodeCursor } from "@/lib/pagination";
 import {
+  buildPlaybackFailureRemovalMetadata,
   buildVideoFeedNextCursorPayload,
   compactVideoFeedCursorSeenValues,
   mergeVideoFeedCandidatePools,
@@ -275,4 +276,27 @@ test("compactVideoFeedCursorSeenValues keeps the newest unique values", () => {
   assert.equal(compacted.includes("id-0"), false);
   assert.equal(compacted.includes("id-10"), true);
   assert.equal(compacted.filter((value) => value === "id-129").length, 1);
+});
+
+test("buildPlaybackFailureRemovalMetadata records sanitized playback failure details", () => {
+  const metadata = buildPlaybackFailureRemovalMetadata({
+    reason: "  AVPlayer failed  ",
+    retryCount: 1.8,
+    watchMs: Number.NaN,
+    metadata: {
+      sessionId: "session-1",
+      source: "playback_failure",
+    },
+    reportedAt: "2026-06-09T10:00:00.000Z",
+  });
+
+  assert.deepEqual(metadata, {
+    sessionId: "session-1",
+    source: "playback_failure",
+    reportType: "video_feed_playback_failure",
+    reason: "AVPlayer failed",
+    retryCount: 1,
+    watchMs: null,
+    reportedAt: "2026-06-09T10:00:00.000Z",
+  });
 });

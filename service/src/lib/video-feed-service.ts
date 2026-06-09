@@ -7,6 +7,15 @@ import type { TargetSource } from "@/lib/targets";
 export type VideoFeedSource = "user" | "public" | "mixed";
 export type VideoEventType = "impression" | "play" | "finish" | "like" | "dislike" | "skip" | "share";
 
+export type VideoPlaybackFailureRemovalInput = {
+  clientId: string;
+  itemId: string;
+  reason?: string | null;
+  retryCount?: number | null;
+  watchMs?: number | null;
+  metadata?: Record<string, unknown>;
+};
+
 export type VideoFeedQuery = {
   clientId: string;
   limit?: number;
@@ -843,6 +852,57 @@ export async function recordVideoEvent(input: {
   `;
 }
 
+export function buildPlaybackFailureRemovalMetadata(input: {
+  reason?: string | null;
+  retryCount?: number | null;
+  watchMs?: number | null;
+  metadata?: Record<string, unknown>;
+  reportedAt?: string;
+}) {
+  return {
+    ...(input.metadata ?? {}),
+    reportType: "video_feed_playback_failure",
+    reason: nonEmptyString(input.reason),
+    retryCount: normalizeNonNegativeInteger(input.retryCount),
+    watchMs: normalizeNonNegativeInteger(input.watchMs),
+    reportedAt: input.reportedAt ?? new Date().toISOString(),
+  };
+}
+
+export async function removeVideoFeedItemAfterPlaybackFailure(input: VideoPlaybackFailureRemovalInput) {
+  const sql = getSql();
+  const failureMetadata = buildPlaybackFailureRemovalMetadata(input);
+  const rows = asRows<{ id: string }>(await sql`
+    UPDATE items i
+    SET
+      expires_at = LEAST(i.expires_at, NOW()),
+      video_url_expires_at = LEAST(i.video_url_expires_at, NOW()),
+      metadata = i.metadata || jsonb_build_object('video_feed_playback_failure', ${JSON.stringify(failureMetadata)}::jsonb)
+    WHERE i.id = ${input.itemId}
+      AND i.video_url IS NOT NULL
+      AND i.video_url <> ''
+      AND i.expires_at > NOW()
+      AND EXISTS (
+        SELECT 1
+        FROM targets t
+        LEFT JOIN target_profiles tp ON tp.target_id = t.id
+        WHERE t.id = i.target_id
+          AND (
+            COALESCE(tp.is_public_pool, FALSE) = TRUE
+            OR EXISTS (
+              SELECT 1
+              FROM subscriptions s
+              WHERE s.target_id = i.target_id
+                AND s.client_id = ${input.clientId}
+            )
+          )
+      )
+    RETURNING i.id
+  `);
+
+  return { removed: rows.length > 0 };
+}
+
 export async function listVideoTags() {
   const sql = getSql();
   const tags = asRows<{ name: string; type: "category" | "topic" | "system"; weight: number }>(await sql`
@@ -868,4 +928,17 @@ export async function listVideoCategories() {
   `);
 
   return categories;
+}
+
+function nonEmptyString(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeNonNegativeInteger(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor(value));
 }
