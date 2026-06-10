@@ -28,6 +28,7 @@ const DETAIL_LINK_PROFILE_PLATFORMS: Record<string, string> = {
   tikporn: "Tik.Porn",
   "91porna": "91porna",
   "91porn": "91porn",
+  "91rb": "91热爆",
   badnews: "Bad.news",
   bdrq: "背德人妻",
   avgood: "AvGood",
@@ -124,6 +125,10 @@ export function normalizePresentationSource(value: string) {
     case "91porn":
     case "91porn.com":
       return "91porn";
+    case "91rb":
+    case "rb91":
+    case "91rb.com":
+      return "91rb";
     case "91porna":
     case "porna91":
       return "91porna";
@@ -186,6 +191,8 @@ function sourceDisplayName(source: string) {
       return "91porna";
     case "91porn":
       return "91porn";
+    case "91rb":
+      return "91热爆";
     case "badnews":
       return "Bad.news";
     case "bdrq":

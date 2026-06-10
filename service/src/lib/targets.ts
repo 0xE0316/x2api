@@ -1,4 +1,4 @@
-export type TargetSource = "twitter" | "youtube" | "heiliao" | "cg91" | "baoliao51" | "douyin" | "18mh" | "rou" | "dadaafa" | "18j" | "1mtif" | "tikporn" | "91porna" | "91porn" | "badnews" | "bdrq" | "avgood" | "705hs" | "xxxtik";
+export type TargetSource = "twitter" | "youtube" | "heiliao" | "cg91" | "baoliao51" | "douyin" | "18mh" | "rou" | "dadaafa" | "18j" | "1mtif" | "tikporn" | "91porna" | "91porn" | "91rb" | "badnews" | "bdrq" | "avgood" | "705hs" | "xxxtik";
 export type TargetKind = "user" | "keyword" | "channel" | "site";
 
 export type ParsedTarget = {
@@ -27,6 +27,7 @@ const MTIF_DEFAULT_URL = "https://1mtif.sbs";
 const TIKPORN_DEFAULT_URL = "https://tik.porn";
 const PORNA91_DEFAULT_URL = "https://91porna.com";
 const PORN91_DEFAULT_URL = "https://91porn.com";
+const RB91_DEFAULT_URL = "https://www.91rb.com";
 const BADNEWS_DEFAULT_URL = "https://bad.news";
 const BDRQ_DEFAULT_URL = "https://g3h4i5j6.bdrq45.cc";
 const AVGOOD_DEFAULT_URL = "https://avgood.com";
@@ -261,6 +262,25 @@ function isPorn91TargetURL(raw: string) {
     }
     const url = new URL(value.includes("://") ? value : `https://${value}`);
     return url.host.toLowerCase() === "91porn.com" || url.host.toLowerCase() === "www.91porn.com";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeRb91TargetValue(raw: string) {
+  const value = (raw.trim() || RB91_DEFAULT_URL).replace(/\/+$/, "");
+  const url = new URL(value.includes("://") ? value : `https://${value}`);
+  return `${url.protocol}//${url.host.toLowerCase()}`;
+}
+
+function isRb91TargetURL(raw: string) {
+  try {
+    const value = raw.trim();
+    if (!value) {
+      return false;
+    }
+    const url = new URL(value.includes("://") ? value : `https://${value}`);
+    return url.host.toLowerCase() === "91rb.com" || url.host.toLowerCase() === "www.91rb.com";
   } catch {
     return false;
   }
@@ -579,6 +599,21 @@ export function parseTarget(raw: string): ParsedTarget {
     return { source: "91porn", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
   }
 
+  if (value.toLowerCase().startsWith("91rb:")) {
+    const normalized = normalizeRb91TargetValue(value.slice("91rb:".length));
+    return { source: "91rb", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  }
+
+  if (value.toLowerCase().startsWith("rb91:")) {
+    const normalized = normalizeRb91TargetValue(value.slice("rb91:".length));
+    return { source: "91rb", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  }
+
+  if (isRb91TargetURL(value)) {
+    const normalized = normalizeRb91TargetValue(value);
+    return { source: "91rb", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  }
+
   if (value.toLowerCase().startsWith("91porna:")) {
     const normalized = normalizePorna91TargetValue(value.slice("91porna:".length));
     return { source: "91porna", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
@@ -792,6 +827,9 @@ export function formatTarget(target: ParsedTarget | { source?: TargetSource; kin
   if (target.source === "91porn") {
     return `91porn:${target.value}`;
   }
+  if (target.source === "91rb") {
+    return `91rb:${target.value}`;
+  }
   if (target.source === "91porna") {
     return `91porna:${target.value}`;
   }
@@ -956,6 +994,10 @@ function normalizeTargetSource(rawSource: unknown): TargetSource {
     case "91porn":
     case "91porn.com":
       return "91porn";
+    case "91rb":
+    case "rb91":
+    case "91rb.com":
+      return "91rb";
     case "91porna":
     case "porna91":
       return "91porna";
@@ -1055,6 +1097,12 @@ function normalizeTargetKind(rawKind: unknown, source: TargetSource): TargetKind
       return "site";
     }
     throw new Error("91porn targets must use site kind.");
+  }
+  if (source === "91rb") {
+    if (kind === "site") {
+      return "site";
+    }
+    throw new Error("91rb targets must use site kind.");
   }
   if (source === "badnews") {
     if (kind === "site") {
@@ -1159,6 +1207,9 @@ function parseObjectTarget(candidate: { source?: unknown; kind?: unknown; target
     parsed = { source, kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
   } else if (source === "91porn") {
     const normalized = normalizePorn91TargetValue(candidate.target);
+    parsed = { source, kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  } else if (source === "91rb") {
+    const normalized = normalizeRb91TargetValue(candidate.target);
     parsed = { source, kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
   } else if (source === "badnews") {
     const normalized = normalizeBadNewsTargetValue(candidate.target);

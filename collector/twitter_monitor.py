@@ -165,6 +165,19 @@ try:
         refresh_playback_urls as refresh_91porn_playback_urls,
         upsert_video_item as upsert_91porn_video_item,
     )
+    from collector.rb91_refresh import refresh_playback_urls as refresh_91rb_playback_urls
+    from collector.rb91_source import (
+        RB91_CRITICAL_WINDOW_MINUTES,
+        RB91_DEFAULT_BASE_URL,
+        RB91_KIND,
+        RB91_REFRESH_WINDOW_MINUTES,
+        RB91_RETENTION_HOURS,
+        RB91_SITE_NAME,
+        RB91_SOURCE,
+        is_91rb_target_url,
+        monitor_site as monitor_91rb_site,
+        normalize_91rb_target_value,
+    )
     from collector.rou_source import (
         ROU_CRITICAL_WINDOW_MINUTES,
         ROU_DEFAULT_BASE_URL,
@@ -345,6 +358,19 @@ except ModuleNotFoundError:
         refresh_playback_urls as refresh_91porn_playback_urls,
         upsert_video_item as upsert_91porn_video_item,
     )
+    from rb91_refresh import refresh_playback_urls as refresh_91rb_playback_urls
+    from rb91_source import (
+        RB91_CRITICAL_WINDOW_MINUTES,
+        RB91_DEFAULT_BASE_URL,
+        RB91_KIND,
+        RB91_REFRESH_WINDOW_MINUTES,
+        RB91_RETENTION_HOURS,
+        RB91_SITE_NAME,
+        RB91_SOURCE,
+        is_91rb_target_url,
+        monitor_site as monitor_91rb_site,
+        normalize_91rb_target_value,
+    )
     from rou_source import (
         ROU_CRITICAL_WINDOW_MINUTES,
         ROU_DEFAULT_BASE_URL,
@@ -441,6 +467,7 @@ DETAIL_LINK_PROFILE_SOURCES = {
     TIKPORN_SOURCE,
     PORNA91_SOURCE,
     PORN91_SOURCE,
+    RB91_SOURCE,
     J18_SOURCE,
     BDRQ_SOURCE,
     AVGOOD_SOURCE,
@@ -646,6 +673,18 @@ def parse_target_value(target: str) -> dict[str, str]:
         value = normalize_91porn_target_value(normalized)
         return {"source": PORN91_SOURCE, "kind": PORN91_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
 
+    if normalized.lower().startswith("91rb:"):
+        value = normalize_91rb_target_value(normalized[len("91rb:") :].strip())
+        return {"source": RB91_SOURCE, "kind": RB91_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
+
+    if normalized.lower().startswith("rb91:"):
+        value = normalize_91rb_target_value(normalized[len("rb91:") :].strip())
+        return {"source": RB91_SOURCE, "kind": RB91_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
+
+    if is_91rb_target_url(normalized):
+        value = normalize_91rb_target_value(normalized)
+        return {"source": RB91_SOURCE, "kind": RB91_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
+
     if normalized.lower().startswith("91porna:"):
         value = normalize_porna91_target_value(normalized[len("91porna:") :].strip())
         return {"source": PORNA91_SOURCE, "kind": PORNA91_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
@@ -813,6 +852,8 @@ def format_target_row(target_row: dict) -> str:
         return f"badnews:{target_row['value']}"
     if target_row.get("source") == PORN91_SOURCE:
         return f"91porn:{target_row['value']}"
+    if target_row.get("source") == RB91_SOURCE:
+        return f"91rb:{target_row['value']}"
     if target_row.get("source") == PORNA91_SOURCE:
         return f"91porna:{target_row['value']}"
     if target_row.get("source") == TIKPORN_SOURCE:
@@ -877,6 +918,8 @@ def normalized_presentation_source(source: str | None) -> str:
         return BDRQ_SOURCE
     if source_key in {"91porn", "91porn.com"}:
         return PORN91_SOURCE
+    if source_key in {"91rb", "91rb.com", "rb91"}:
+        return RB91_SOURCE
     if source_key in {"91porna", "porna91", "91porna.com"}:
         return PORNA91_SOURCE
     return source_key
@@ -903,6 +946,7 @@ def source_display_name(source: str | None) -> str:
         BADNEWS_SOURCE: BADNEWS_SITE_NAME,
         BDRQ_SOURCE: BDRQ_SITE_NAME,
         PORN91_SOURCE: PORN91_SITE_NAME,
+        RB91_SOURCE: RB91_SITE_NAME,
         PORNA91_SOURCE: PORNA91_SITE_NAME,
     }.get(source_key, source_key or "X")
 
@@ -3882,7 +3926,7 @@ def cleanup_records(conn, retention_days: int, max_records: int) -> dict[str, in
             DELETE FROM items i
             USING targets t
             WHERE t.id = i.target_id
-              AND t.source IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', 'badnews', '91porna', '91porn', '18j', 'avgood', '705hs', 'xxxtik')
+              AND t.source IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', 'badnews', '91porna', '91porn', '91rb', '18j', 'avgood', '705hs', 'xxxtik')
               AND i.expires_at <= NOW()
             """
         )
@@ -4025,6 +4069,7 @@ def query_records(
                     WHEN t.source = 'dadaafa' THEN 'dadaafa:' || t.value
                     WHEN t.source = '91porna' THEN '91porna:' || t.value
                     WHEN t.source = '91porn' THEN '91porn:' || t.value
+                    WHEN t.source = '91rb' THEN '91rb:' || t.value
                     WHEN t.source = 'avgood' THEN 'avgood:' || t.value
                     WHEN t.source = '705hs' THEN '705hs:' || t.value
                     WHEN t.source = 'xxxtik' THEN 'xxxtik:' || t.value
@@ -5111,6 +5156,38 @@ def command_refresh_91porn_playback_urls(args) -> int:
     return 0
 
 
+def command_monitor_91rb(args) -> int:
+    base_url = args.base_url or RB91_DEFAULT_BASE_URL
+    retention_hours = args.retention_hours if args.retention_hours is not None else RB91_RETENTION_HOURS
+    if args.retention_days is not None:
+        retention_hours = args.retention_days * 24
+    max_records = args.max_records if args.max_records is not None else DEFAULT_MAX_RECORDS
+    if args.dry_run and not DATABASE_URL:
+        stats = monitor_91rb_site(None, base_url=base_url, max_pages=max(1, args.max_pages), retention_hours=max(1, retention_hours), public_pool=not args.private_pool, dry_run=True)
+        print(json.dumps(stats, ensure_ascii=False, indent=2, default=str))
+        return 0
+    with get_db_connection() as conn:
+        stats = monitor_91rb_site(conn, base_url=base_url, max_pages=max(1, args.max_pages), retention_hours=max(1, retention_hours), public_pool=not args.private_pool, dry_run=args.dry_run)
+        if args.dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
+        if not args.skip_cleanup and not args.dry_run:
+            cleanup_stats = cleanup_records(conn, max(1, (retention_hours + 23) // 24), max_records)
+            conn.commit()
+            stats = {**stats, "cleanup": cleanup_stats}
+    print(json.dumps(stats, ensure_ascii=False, indent=2, default=str))
+    return 0
+
+
+def command_refresh_91rb_playback_urls(args) -> int:
+    with get_db_connection() as conn:
+        stats = refresh_91rb_playback_urls(conn, limit=max(1, args.limit), refresh_window_minutes=max(1, args.refresh_window_minutes), critical_window_minutes=max(1, args.critical_window_minutes))
+        conn.commit()
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_monitor_avgood(args) -> int:
     base_url = args.base_url or AVGOOD_DEFAULT_BASE_URL
     retention_hours = args.retention_hours if args.retention_hours is not None else AVGOOD_RETENTION_HOURS
@@ -5461,6 +5538,17 @@ def build_parser() -> argparse.ArgumentParser:
     porn91_monitor_parser.add_argument("--dry-run", action="store_true", help="只解析和验证，不写入数据库")
     porn91_monitor_parser.set_defaults(func=command_monitor_91porn)
 
+    rb91_monitor_parser = subparsers.add_parser("monitor-91rb", help="单独抓取 91热爆视频并入库")
+    rb91_monitor_parser.add_argument("--base-url", default=RB91_DEFAULT_BASE_URL, help="91热爆站点入口；也可传 https://www.91rb.com/latest-updates/")
+    rb91_monitor_parser.add_argument("--max-pages", type=int, default=2, help="单次最多分页数")
+    rb91_monitor_parser.add_argument("--retention-hours", type=int, default=None, help=f"视频业务保留小时数，默认 {RB91_RETENTION_HOURS}")
+    rb91_monitor_parser.add_argument("--retention-days", type=int, default=None, help="兼容旧参数：视频业务保留天数")
+    rb91_monitor_parser.add_argument("--max-records", type=int, default=None, help="最大保留记录数")
+    rb91_monitor_parser.add_argument("--skip-cleanup", action="store_true", help="本轮监控后不执行清理")
+    rb91_monitor_parser.add_argument("--private-pool", action="store_true", help="不加入公共视频池")
+    rb91_monitor_parser.add_argument("--dry-run", action="store_true", help="只解析和验证，不写入数据库")
+    rb91_monitor_parser.set_defaults(func=command_monitor_91rb)
+
     avgood_monitor_parser = subparsers.add_parser("monitor-avgood", help="单独抓取 AvGood 视频并入库")
     avgood_monitor_parser.add_argument("--base-url", default=AVGOOD_DEFAULT_BASE_URL, help="AvGood 站点入口；也可传 https://avgood.com/c/664/")
     avgood_monitor_parser.add_argument("--max-pages", type=int, default=1, help="单次最多分页数")
@@ -5619,6 +5707,12 @@ def build_parser() -> argparse.ArgumentParser:
     refresh_porn91_parser.add_argument("--refresh-window-minutes", type=int, default=PORN91_REFRESH_WINDOW_MINUTES, help="普通刷新窗口")
     refresh_porn91_parser.add_argument("--critical-window-minutes", type=int, default=PORN91_CRITICAL_WINDOW_MINUTES, help="临界过期窗口")
     refresh_porn91_parser.set_defaults(func=command_refresh_91porn_playback_urls)
+
+    refresh_rb91_parser = subparsers.add_parser("refresh-91rb-playback-urls", help="刷新 91热爆播放 URL（仅处理带过期时间的历史记录）")
+    refresh_rb91_parser.add_argument("--limit", type=int, default=30, help="单次最多处理条数")
+    refresh_rb91_parser.add_argument("--refresh-window-minutes", type=int, default=RB91_REFRESH_WINDOW_MINUTES, help="普通刷新窗口")
+    refresh_rb91_parser.add_argument("--critical-window-minutes", type=int, default=RB91_CRITICAL_WINDOW_MINUTES, help="临界过期窗口")
+    refresh_rb91_parser.set_defaults(func=command_refresh_91rb_playback_urls)
 
     refresh_avgood_parser = subparsers.add_parser("refresh-avgood-playback-urls", help="刷新 AvGood 播放 URL（仅处理带过期时间的历史记录）")
     refresh_avgood_parser.add_argument("--limit", type=int, default=30, help="单次最多处理条数")

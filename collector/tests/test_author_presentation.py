@@ -107,6 +107,7 @@ class AuthorPresentationTest(unittest.TestCase):
             ("tikporn", "Tik.Porn", "https://tik.porn/video/1529368"),
             ("91porna", "91porna", "https://91porna.com/comic/index/detail?video_key=346951"),
             ("91porn", "91porn", "https://91porn.com/view_video.php?viewkey=abc123"),
+            ("91rb", "91热爆", "https://www.91rb.com/videos/319962/example/"),
             ("badnews", "Bad.news", "https://bad.news/t/6227046"),
         ]
 
@@ -198,6 +199,17 @@ class AuthorPresentationTest(unittest.TestCase):
                 "kind": "site",
                 "value": "https://91porn.com",
                 "normalized_value": "91porn.com",
+            },
+        )
+
+    def test_parse_target_value_accepts_91rb_url(self):
+        self.assertEqual(
+            parse_target_value("https://www.91rb.com/latest-updates/"),
+            {
+                "source": "91rb",
+                "kind": "site",
+                "value": "https://www.91rb.com",
+                "normalized_value": "www.91rb.com",
             },
         )
 

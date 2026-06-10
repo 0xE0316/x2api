@@ -35,6 +35,7 @@ test("buildAuthorPresentation uses item detail links for site sources", () => {
     ["tikporn", "Tik.Porn", "https://tik.porn/video/1529368"],
     ["91porna", "91porna", "https://91porna.com/comic/index/detail?video_key=346951"],
     ["91porn", "91porn", "https://91porn.com/view_video.php?viewkey=abc123"],
+    ["91rb", "91热爆", "https://www.91rb.com/videos/319962/example/"],
     ["badnews", "Bad.news", "https://bad.news/t/6227046"],
     ["bdrq", "背德人妻", "https://g3h4i5j6.bdrq45.cc/voddetail/769512.html"],
     ["avgood", "AvGood", "https://avgood.com/c/663855.html"],

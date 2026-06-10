@@ -181,6 +181,24 @@ test("parseTarget understands 91porn site targets", () => {
   });
 });
 
+test("parseTarget understands 91rb site targets", () => {
+  assert.deepEqual(parseTarget("https://www.91rb.com/latest-updates/"), {
+    source: "91rb",
+    kind: "site",
+    value: "https://www.91rb.com",
+    normalizedValue: "www.91rb.com",
+    tags: [],
+  });
+
+  assert.deepEqual(parseTarget("rb91:91rb.com/latest-updates/"), {
+    source: "91rb",
+    kind: "site",
+    value: "https://91rb.com",
+    normalizedValue: "91rb.com",
+    tags: [],
+  });
+});
+
 test("parseTarget understands Bad.news site targets", () => {
   assert.deepEqual(parseTarget("https://bad.news/sort-new/page-1"), {
     source: "badnews",
@@ -443,6 +461,17 @@ test("parseTargets normalizes explicit source aliases", () => {
       kind: "site",
       value: "https://91porn.com",
       normalizedValue: "91porn.com",
+      category: "adult",
+      tags: [],
+    },
+  ]);
+
+  assert.deepEqual(parseTargets([{ source: "rb91", kind: "site", target: "www.91rb.com/latest-updates/", category: "adult" }]), [
+    {
+      source: "91rb",
+      kind: "site",
+      value: "https://www.91rb.com",
+      normalizedValue: "www.91rb.com",
       category: "adult",
       tags: [],
     },

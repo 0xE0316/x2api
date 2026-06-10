@@ -402,6 +402,7 @@ function videoKeyExpression(alias: "i" | "watched_item"): QueryChunk {
       WHEN ${alias}.metadata->>'tikporn_video_id' IS NOT NULL THEN 'tikporn:' || (${alias}.metadata->>'tikporn_video_id')
       WHEN ${alias}.metadata->>'porna91_video_id' IS NOT NULL THEN '91porna:' || (${alias}.metadata->>'porna91_video_id')
       WHEN ${alias}.metadata->>'porn91_video_id' IS NOT NULL THEN '91porn:' || (${alias}.metadata->>'porn91_video_id')
+      WHEN ${alias}.metadata->>'rb91_video_id' IS NOT NULL THEN '91rb:' || (${alias}.metadata->>'rb91_video_id')
       WHEN ${alias}.metadata->>'badnews_video_id' IS NOT NULL THEN 'badnews:' || (${alias}.metadata->>'badnews_video_id')
       WHEN ${alias}.metadata->>'bdrq_video_id' IS NOT NULL THEN 'bdrq:' || (${alias}.metadata->>'bdrq_video_id')
       WHEN ${alias}.metadata->>'avgood_video_id' IS NOT NULL THEN 'avgood:' || (${alias}.metadata->>'avgood_video_id')
@@ -419,6 +420,7 @@ function videoKeyExpression(alias: "i" | "watched_item"): QueryChunk {
       WHEN ${alias}.guid LIKE 'tikporn:%' THEN ${alias}.guid
       WHEN ${alias}.guid LIKE '91porna:%' THEN ${alias}.guid
       WHEN ${alias}.guid LIKE '91porn:%' THEN ${alias}.guid
+      WHEN ${alias}.guid LIKE '91rb:%' THEN ${alias}.guid
       WHEN ${alias}.guid LIKE 'badnews:%' THEN ${alias}.guid
       WHEN ${alias}.guid LIKE 'bdrq:%' THEN ${alias}.guid
       WHEN ${alias}.guid LIKE 'avgood:%' THEN ${alias}.guid
@@ -528,12 +530,12 @@ export async function listVideoFeed(query: VideoFeedQuery) {
         COALESCE(i.published_at, i.stored_at) AS "sortTime",
         CASE
           WHEN t.source = 'youtube' THEN 'youtube:' || t.value
-          WHEN t.source IN ('heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik') THEN t.source
+          WHEN t.source IN ('heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', '91rb', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik') THEN t.source
           WHEN t.kind = 'keyword' THEN 'search:' || t.value
           ELSE t.value
         END AS target,
         CASE
-          WHEN t.source IN ('heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik') THEN t.value
+          WHEN t.source IN ('heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', '91rb', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik') THEN t.value
           WHEN t.source = 'youtube' THEN 'https://www.youtube.com/channel/' || t.value
           WHEN t.source = 'twitter' AND t.kind = 'user' THEN 'https://x.com/' || t.value
           ELSE NULL
@@ -562,7 +564,7 @@ export async function listVideoFeed(query: VideoFeedQuery) {
         AND i.video_url <> ''
         AND i.expires_at > NOW()
         AND (
-          t.source NOT IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik')
+          t.source NOT IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', '91rb', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik')
           OR i.video_url_expires_at > NOW() + INTERVAL '10 minutes'
         )
         AND NOT EXISTS (
@@ -812,7 +814,7 @@ export async function recordVideoEvent(input: {
       AND i.video_url <> ''
       AND i.expires_at > NOW()
       AND (
-        NOT EXISTS (SELECT 1 FROM targets t WHERE t.id = i.target_id AND t.source IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik'))
+        NOT EXISTS (SELECT 1 FROM targets t WHERE t.id = i.target_id AND t.source IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', '91rb', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik'))
         OR i.video_url_expires_at > NOW()
       )
   `;
@@ -855,7 +857,7 @@ export async function recordVideoEvent(input: {
       AND i.video_url <> ''
       AND i.expires_at > NOW()
       AND (
-        NOT EXISTS (SELECT 1 FROM targets t WHERE t.id = i.target_id AND t.source IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik'))
+        NOT EXISTS (SELECT 1 FROM targets t WHERE t.id = i.target_id AND t.source IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', '18j', '1mtif', 'tikporn', '91porna', '91porn', '91rb', 'badnews', 'bdrq', 'avgood', '705hs', 'xxxtik'))
         OR i.video_url_expires_at > NOW()
       )
     ON CONFLICT (item_id) DO UPDATE SET

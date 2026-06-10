@@ -1,0 +1,57 @@
+name: 91rb Monitor
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: x2ding-91rb-monitor
+  cancel-in-progress: false
+
+on:
+  schedule:
+    - cron: '10,50 0-23/2 * * *'
+    - cron: '30 1-23/2 * * *'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: '91热爆站点入口'
+        required: false
+        default: 'https://www.91rb.com/latest-updates/'
+      max_pages:
+        description: '单次最多分页数'
+        required: false
+        default: '2'
+
+jobs:
+  monitor-91rb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: collector/requirements.txt
+
+      - name: Install dependencies
+        working-directory: collector
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run 91rb monitor
+        working-directory: collector
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BASE_URL: ${{ inputs.base_url || vars.RB91_BASE_URL || 'https://www.91rb.com/latest-updates/' }}
+          MAX_PAGES: ${{ inputs.max_pages || vars.RB91_MONITOR_MAX_PAGES || '2' }}
+        run: |
+          python twitter_monitor.py monitor-91rb \
+            --base-url "${BASE_URL}" \
+            --max-pages "${MAX_PAGES}" \
+            --retention-hours 84
