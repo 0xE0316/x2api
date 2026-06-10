@@ -81,6 +81,19 @@ try:
         monitor_site as monitor_affair_site,
         normalize_affair_target_value,
     )
+    from collector.attach_refresh import refresh_playback_urls as refresh_attach_playback_urls
+    from collector.attach_source import (
+        ATTACH_CRITICAL_WINDOW_MINUTES,
+        ATTACH_DEFAULT_BASE_URL,
+        ATTACH_KIND,
+        ATTACH_REFRESH_WINDOW_MINUTES,
+        ATTACH_RETENTION_HOURS,
+        ATTACH_SITE_NAME,
+        ATTACH_SOURCE,
+        is_attach_target_url,
+        monitor_site as monitor_attach_site,
+        normalize_attach_target_value,
+    )
     from collector.dirtyship_refresh import refresh_playback_urls as refresh_dirtyship_playback_urls
     from collector.dirtyship_source import (
         DIRTYSHIP_CRITICAL_WINDOW_MINUTES,
@@ -326,6 +339,19 @@ except ModuleNotFoundError:
         is_affair_target_url,
         monitor_site as monitor_affair_site,
         normalize_affair_target_value,
+    )
+    from attach_refresh import refresh_playback_urls as refresh_attach_playback_urls
+    from attach_source import (
+        ATTACH_CRITICAL_WINDOW_MINUTES,
+        ATTACH_DEFAULT_BASE_URL,
+        ATTACH_KIND,
+        ATTACH_REFRESH_WINDOW_MINUTES,
+        ATTACH_RETENTION_HOURS,
+        ATTACH_SITE_NAME,
+        ATTACH_SOURCE,
+        is_attach_target_url,
+        monitor_site as monitor_attach_site,
+        normalize_attach_target_value,
     )
     from dirtyship_refresh import refresh_playback_urls as refresh_dirtyship_playback_urls
     from dirtyship_source import (
@@ -580,6 +606,7 @@ DETAIL_LINK_PROFILE_SOURCES = {
     HS705_SOURCE,
     XXXTIK_SOURCE,
     AFFAIR_SOURCE,
+    ATTACH_SOURCE,
     DIRTYSHIP_SOURCE,
     INFLUENCERSGONEWILD_SOURCE,
     MISSAV_SOURCE,
@@ -750,6 +777,22 @@ def parse_target_value(target: str) -> dict[str, str]:
     if is_affair_target_url(normalized):
         value = normalize_affair_target_value(normalized)
         return {"source": AFFAIR_SOURCE, "kind": AFFAIR_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
+
+    if normalized.lower().startswith("attach:"):
+        value = normalize_attach_target_value(normalized[len("attach:") :].strip())
+        return {"source": ATTACH_SOURCE, "kind": ATTACH_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
+
+    if normalized.lower().startswith("hlcgw:"):
+        value = normalize_attach_target_value(normalized[len("hlcgw:") :].strip())
+        return {"source": ATTACH_SOURCE, "kind": ATTACH_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
+
+    if normalized.lower().startswith("attach.bslqmdvk.cc:"):
+        value = normalize_attach_target_value(normalized[len("attach.bslqmdvk.cc:") :].strip())
+        return {"source": ATTACH_SOURCE, "kind": ATTACH_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
+
+    if is_attach_target_url(normalized):
+        value = normalize_attach_target_value(normalized)
+        return {"source": ATTACH_SOURCE, "kind": ATTACH_KIND, "value": value, "normalized_value": normalize_site_target_key(value)}
 
     if normalized.lower().startswith("dirtyship:"):
         value = normalize_dirtyship_target_value(normalized[len("dirtyship:") :].strip())
@@ -1012,6 +1055,8 @@ def format_target_row(target_row: dict) -> str:
         return f"xxxtik:{target_row['value']}"
     if target_row.get("source") == AFFAIR_SOURCE:
         return f"affair:{target_row['value']}"
+    if target_row.get("source") == ATTACH_SOURCE:
+        return f"attach:{target_row['value']}"
     if target_row.get("source") == DIRTYSHIP_SOURCE:
         return f"dirtyship:{target_row['value']}"
     if target_row.get("source") == INFLUENCERSGONEWILD_SOURCE:
@@ -1072,6 +1117,8 @@ def normalized_presentation_source(source: str | None) -> str:
         return XXXTIK_SOURCE
     if source_key in {"affair", "911bl", "911bl.com", "affair.zhkrsawaw.cc"}:
         return AFFAIR_SOURCE
+    if source_key in {"attach", "attach.bslqmdvk.cc", "hlcgw", "hlcgw.com"}:
+        return ATTACH_SOURCE
     if source_key in {"dirtyship", "dirtyship.com"}:
         return DIRTYSHIP_SOURCE
     if source_key in {"influencersgonewild", "influencersgonewild.com", "igw"}:
@@ -1123,6 +1170,7 @@ def source_display_name(source: str | None) -> str:
         HS705_SOURCE: HS705_SITE_NAME,
         XXXTIK_SOURCE: XXXTIK_SITE_NAME,
         AFFAIR_SOURCE: AFFAIR_SITE_NAME,
+        ATTACH_SOURCE: ATTACH_SITE_NAME,
         DIRTYSHIP_SOURCE: DIRTYSHIP_SITE_NAME,
         INFLUENCERSGONEWILD_SOURCE: INFLUENCERSGONEWILD_SITE_NAME,
         MISSAV_SOURCE: MISSAV_SITE_NAME,
@@ -4112,7 +4160,7 @@ def cleanup_records(conn, retention_days: int, max_records: int) -> dict[str, in
             DELETE FROM items i
             USING targets t
             WHERE t.id = i.target_id
-              AND t.source IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', 'badnews', '91porna', '91porn', '91rb', '18j', 'avgood', '705hs', 'xxxtik', 'affair', 'dirtyship', 'influencersgonewild', 'missav')
+              AND t.source IN ('youtube', 'heiliao', 'cg91', 'baoliao51', 'douyin', '18mh', 'rou', 'dadaafa', 'badnews', '91porna', '91porn', '91rb', '18j', 'avgood', '705hs', 'xxxtik', 'affair', 'attach', 'dirtyship', 'influencersgonewild', 'missav')
               AND i.expires_at <= NOW()
             """
         )
@@ -5506,6 +5554,38 @@ def command_refresh_affair_playback_urls(args) -> int:
     return 0
 
 
+def command_monitor_attach(args) -> int:
+    base_url = args.base_url or ATTACH_DEFAULT_BASE_URL
+    retention_hours = args.retention_hours if args.retention_hours is not None else ATTACH_RETENTION_HOURS
+    if args.retention_days is not None:
+        retention_hours = args.retention_days * 24
+    max_records = args.max_records if args.max_records is not None else DEFAULT_MAX_RECORDS
+    if args.dry_run and not DATABASE_URL:
+        stats = monitor_attach_site(None, base_url=base_url, max_pages=max(1, args.max_pages), retention_hours=max(1, retention_hours), public_pool=not args.private_pool, dry_run=True)
+        print(json.dumps(stats, ensure_ascii=False, indent=2, default=str))
+        return 0
+    with get_db_connection() as conn:
+        stats = monitor_attach_site(conn, base_url=base_url, max_pages=max(1, args.max_pages), retention_hours=max(1, retention_hours), public_pool=not args.private_pool, dry_run=args.dry_run)
+        if args.dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
+        if not args.skip_cleanup and not args.dry_run:
+            cleanup_stats = cleanup_records(conn, max(1, (retention_hours + 23) // 24), max_records)
+            conn.commit()
+            stats = {**stats, "cleanup": cleanup_stats}
+    print(json.dumps(stats, ensure_ascii=False, indent=2, default=str))
+    return 0
+
+
+def command_refresh_attach_playback_urls(args) -> int:
+    with get_db_connection() as conn:
+        stats = refresh_attach_playback_urls(conn, limit=max(1, args.limit), refresh_window_minutes=max(1, args.refresh_window_minutes), critical_window_minutes=max(1, args.critical_window_minutes))
+        conn.commit()
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_monitor_dirtyship(args) -> int:
     base_url = args.base_url or DIRTYSHIP_DEFAULT_BASE_URL
     retention_hours = args.retention_hours if args.retention_hours is not None else DIRTYSHIP_RETENTION_HOURS
@@ -5911,6 +5991,17 @@ def build_parser() -> argparse.ArgumentParser:
     affair_monitor_parser.add_argument("--dry-run", action="store_true", help="只解析和验证，不写入数据库")
     affair_monitor_parser.set_defaults(func=command_monitor_affair)
 
+    attach_monitor_parser = subparsers.add_parser("monitor-attach", help="单独抓取黑料吃瓜网 Attach 分类视频并入库")
+    attach_monitor_parser.add_argument("--base-url", default=ATTACH_DEFAULT_BASE_URL, help="Attach 分类入口；也可传 https://attach.bslqmdvk.cc/category/zxcg/")
+    attach_monitor_parser.add_argument("--max-pages", type=int, default=1, help="单次最多分页数")
+    attach_monitor_parser.add_argument("--retention-hours", type=int, default=None, help=f"视频业务保留小时数，默认 {ATTACH_RETENTION_HOURS}")
+    attach_monitor_parser.add_argument("--retention-days", type=int, default=None, help="兼容旧参数：视频业务保留天数")
+    attach_monitor_parser.add_argument("--max-records", type=int, default=None, help="最大保留记录数")
+    attach_monitor_parser.add_argument("--skip-cleanup", action="store_true", help="本轮监控后不执行清理")
+    attach_monitor_parser.add_argument("--private-pool", action="store_true", help="不加入公共视频池")
+    attach_monitor_parser.add_argument("--dry-run", action="store_true", help="只解析和验证，不写入数据库")
+    attach_monitor_parser.set_defaults(func=command_monitor_attach)
+
     dirtyship_monitor_parser = subparsers.add_parser("monitor-dirtyship", help="单独抓取 DirtyShip 视频并入库")
     dirtyship_monitor_parser.add_argument("--base-url", default=DIRTYSHIP_DEFAULT_BASE_URL, help="DirtyShip 站点入口；也可传 https://dirtyship.com")
     dirtyship_monitor_parser.add_argument("--max-pages", type=int, default=2, help="单次最多分页数")
@@ -6099,6 +6190,12 @@ def build_parser() -> argparse.ArgumentParser:
     refresh_affair_parser.add_argument("--refresh-window-minutes", type=int, default=AFFAIR_REFRESH_WINDOW_MINUTES, help="普通刷新窗口")
     refresh_affair_parser.add_argument("--critical-window-minutes", type=int, default=AFFAIR_CRITICAL_WINDOW_MINUTES, help="临界过期窗口")
     refresh_affair_parser.set_defaults(func=command_refresh_affair_playback_urls)
+
+    refresh_attach_parser = subparsers.add_parser("refresh-attach-playback-urls", help="刷新 Attach 播放 URL（仅处理带过期时间的历史记录）")
+    refresh_attach_parser.add_argument("--limit", type=int, default=30, help="单次最多处理条数")
+    refresh_attach_parser.add_argument("--refresh-window-minutes", type=int, default=ATTACH_REFRESH_WINDOW_MINUTES, help="普通刷新窗口")
+    refresh_attach_parser.add_argument("--critical-window-minutes", type=int, default=ATTACH_CRITICAL_WINDOW_MINUTES, help="临界过期窗口")
+    refresh_attach_parser.set_defaults(func=command_refresh_attach_playback_urls)
 
     refresh_dirtyship_parser = subparsers.add_parser("refresh-dirtyship-playback-urls", help="刷新 DirtyShip 播放 URL（仅处理带过期时间的历史记录）")
     refresh_dirtyship_parser.add_argument("--limit", type=int, default=30, help="单次最多处理条数")

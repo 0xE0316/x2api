@@ -1,4 +1,4 @@
-export type TargetSource = "twitter" | "youtube" | "heiliao" | "cg91" | "baoliao51" | "douyin" | "18mh" | "rou" | "dadaafa" | "18j" | "1mtif" | "tikporn" | "91porna" | "91porn" | "91rb" | "badnews" | "bdrq" | "avgood" | "705hs" | "xxxtik" | "affair" | "dirtyship" | "influencersgonewild" | "missav";
+export type TargetSource = "twitter" | "youtube" | "heiliao" | "cg91" | "baoliao51" | "douyin" | "18mh" | "rou" | "dadaafa" | "18j" | "1mtif" | "tikporn" | "91porna" | "91porn" | "91rb" | "badnews" | "bdrq" | "avgood" | "705hs" | "xxxtik" | "affair" | "attach" | "dirtyship" | "influencersgonewild" | "missav";
 export type TargetKind = "user" | "keyword" | "channel" | "site";
 
 export type ParsedTarget = {
@@ -34,6 +34,7 @@ const AVGOOD_DEFAULT_URL = "https://avgood.com";
 const HS705_DEFAULT_URL = "https://705hs.com";
 const XXXTIK_DEFAULT_URL = "https://xxxtik.com";
 const AFFAIR_DEFAULT_URL = "https://affair.zhkrsawaw.cc/category/jrgb/";
+const ATTACH_DEFAULT_URL = "https://attach.bslqmdvk.cc/category/zxcg/";
 const DIRTYSHIP_DEFAULT_URL = "https://dirtyship.com";
 const INFLUENCERSGONEWILD_DEFAULT_URL = "https://influencersgonewild.com";
 const MISSAV_DEFAULT_URL = "https://missav.app/vodtype/20/";
@@ -411,6 +412,31 @@ function isAffairTargetURL(raw: string) {
   }
 }
 
+function normalizeAttachTargetValue(raw: string) {
+  const value = raw.trim() || ATTACH_DEFAULT_URL;
+  const url = new URL(value.includes("://") ? value : `https://${value}`);
+  let path = url.pathname || "/category/zxcg/";
+  if (path === "/") {
+    path = "/category/zxcg/";
+  }
+  path = `/${path.replace(/^\/+|\/+$/g, "")}/`;
+  return `${url.protocol}//${url.host.toLowerCase()}${path}`;
+}
+
+function isAttachTargetURL(raw: string) {
+  try {
+    const value = raw.trim();
+    if (!value) {
+      return false;
+    }
+    const url = new URL(value.includes("://") ? value : `https://${value}`);
+    const host = url.host.toLowerCase();
+    return host === "attach.bslqmdvk.cc" || host === "hlcgw.com" || host === "www.hlcgw.com";
+  } catch {
+    return false;
+  }
+}
+
 function normalizeDirtyShipTargetValue(raw: string) {
   const value = (raw.trim() || DIRTYSHIP_DEFAULT_URL).replace(/\/+$/, "");
   const url = new URL(value.includes("://") ? value : `https://${value}`);
@@ -663,6 +689,26 @@ export function parseTarget(raw: string): ParsedTarget {
   if (isAffairTargetURL(value)) {
     const normalized = normalizeAffairTargetValue(value);
     return { source: "affair", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  }
+
+  if (value.toLowerCase().startsWith("attach:")) {
+    const normalized = normalizeAttachTargetValue(value.slice("attach:".length));
+    return { source: "attach", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  }
+
+  if (value.toLowerCase().startsWith("hlcgw:")) {
+    const normalized = normalizeAttachTargetValue(value.slice("hlcgw:".length));
+    return { source: "attach", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  }
+
+  if (value.toLowerCase().startsWith("attach.bslqmdvk.cc:")) {
+    const normalized = normalizeAttachTargetValue(value.slice("attach.bslqmdvk.cc:".length));
+    return { source: "attach", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  }
+
+  if (isAttachTargetURL(value)) {
+    const normalized = normalizeAttachTargetValue(value);
+    return { source: "attach", kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
   }
 
   if (value.toLowerCase().startsWith("dirtyship:")) {
@@ -982,6 +1028,9 @@ export function formatTarget(target: ParsedTarget | { source?: TargetSource; kin
   if (target.source === "affair") {
     return `affair:${target.value}`;
   }
+  if (target.source === "attach") {
+    return `attach:${target.value}`;
+  }
   if (target.source === "dirtyship") {
     return `dirtyship:${target.value}`;
   }
@@ -1163,6 +1212,11 @@ function normalizeTargetSource(rawSource: unknown): TargetSource {
     case "911bl.com":
     case "affair.zhkrsawaw.cc":
       return "affair";
+    case "attach":
+    case "attach.bslqmdvk.cc":
+    case "hlcgw":
+    case "hlcgw.com":
+      return "attach";
     case "dirtyship":
     case "dirtyship.com":
       return "dirtyship";
@@ -1322,6 +1376,12 @@ function normalizeTargetKind(rawKind: unknown, source: TargetSource): TargetKind
     }
     throw new Error("Affair targets must use site kind.");
   }
+  if (source === "attach") {
+    if (kind === "site") {
+      return "site";
+    }
+    throw new Error("Attach targets must use site kind.");
+  }
   if (source === "dirtyship") {
     if (kind === "site") {
       return "site";
@@ -1437,6 +1497,9 @@ function parseObjectTarget(candidate: { source?: unknown; kind?: unknown; target
     parsed = { source, kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
   } else if (source === "affair") {
     const normalized = normalizeAffairTargetValue(candidate.target);
+    parsed = { source, kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
+  } else if (source === "attach") {
+    const normalized = normalizeAttachTargetValue(candidate.target);
     parsed = { source, kind: "site", value: normalized, normalizedValue: normalizeHeiliaoTargetKey(normalized), tags: [] };
   } else if (source === "dirtyship") {
     const normalized = normalizeDirtyShipTargetValue(candidate.target);

@@ -263,6 +263,24 @@ test("parseTarget understands xxxtik site targets", () => {
   });
 });
 
+test("parseTarget understands Attach site targets", () => {
+  assert.deepEqual(parseTarget("https://attach.bslqmdvk.cc/category/zxcg/"), {
+    source: "attach",
+    kind: "site",
+    value: "https://attach.bslqmdvk.cc/category/zxcg/",
+    normalizedValue: "attach.bslqmdvk.cc",
+    tags: [],
+  });
+
+  assert.deepEqual(parseTarget("hlcgw:hlcgw.com/category/zxcg/"), {
+    source: "attach",
+    kind: "site",
+    value: "https://hlcgw.com/category/zxcg/",
+    normalizedValue: "hlcgw.com",
+    tags: [],
+  });
+});
+
 test("parseTarget understands DirtyShip site targets", () => {
   assert.deepEqual(parseTarget("https://dirtyship.com/latest/"), {
     source: "dirtyship",
@@ -586,6 +604,17 @@ test("parseTargets normalizes explicit source aliases", () => {
     },
   ]);
 
+  assert.deepEqual(parseTargets([{ source: "hlcgw", kind: "site", target: "attach.bslqmdvk.cc/category/zxcg/", category: "adult" }]), [
+    {
+      source: "attach",
+      kind: "site",
+      value: "https://attach.bslqmdvk.cc/category/zxcg/",
+      normalizedValue: "attach.bslqmdvk.cc",
+      category: "adult",
+      tags: [],
+    },
+  ]);
+
   assert.deepEqual(parseTargets([{ source: "dirtyship.com", kind: "site", target: "dirtyship.com/sample-video/", category: "adult" }]), [
     {
       source: "dirtyship",
@@ -858,6 +887,29 @@ test("parseTargets accepts explicit AvGood object targets", () => {
       normalizedValue: "avgood.com",
       category: "adult",
       tags: ["AvGood", "video"],
+    },
+  ]);
+});
+
+test("parseTargets accepts explicit Attach object targets", () => {
+  const targets = parseTargets([
+    {
+      source: "attach",
+      kind: "site",
+      target: "https://attach.bslqmdvk.cc/category/zxcg/",
+      category: "adult",
+      tags: ["黑料吃瓜网", "视频"],
+    },
+  ]);
+
+  assert.deepEqual(targets, [
+    {
+      source: "attach",
+      kind: "site",
+      value: "https://attach.bslqmdvk.cc/category/zxcg/",
+      normalizedValue: "attach.bslqmdvk.cc",
+      category: "adult",
+      tags: ["黑料吃瓜网", "视频"],
     },
   ]);
 });

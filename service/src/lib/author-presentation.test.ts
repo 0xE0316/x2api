@@ -41,6 +41,7 @@ test("buildAuthorPresentation uses item detail links for site sources", () => {
     ["avgood", "AvGood", "https://avgood.com/c/663855.html"],
     ["705hs", "992KP", "https://705hs.com/Html/91/50710.html"],
     ["xxxtik", "xxxtik", "https://xxxtik.com/post/example"],
+    ["attach", "黑料吃瓜网", "https://attach.bslqmdvk.cc/archives/188412/"],
     ["dirtyship", "DirtyShip", "https://dirtyship.com/sample-video/"],
     ["influencersgonewild", "InfluencersGoneWild", "https://influencersgonewild.com/sample-post/"],
     ["missav", "MISSAV", "https://missav.app/vodplay/261745-1-1/"],
@@ -128,6 +129,22 @@ test("buildAuthorPresentation normalizes source aliases before presentation", ()
       displayHandle: null,
       authorProfileUrl: "https://www.youtube.com/channel/UC12345678901234567890",
       authorProfilePlatform: "YouTube",
+    },
+  );
+
+  assert.deepEqual(
+    buildAuthorPresentation({
+      source: "hlcgw.com",
+      target: "attach:https://attach.bslqmdvk.cc/category/zxcg/",
+      author: "黑料吃瓜网",
+      fullname: "黑料吃瓜网",
+      link: "https://attach.bslqmdvk.cc/archives/188412/",
+    }),
+    {
+      displayAuthor: "黑料吃瓜网",
+      displayHandle: null,
+      authorProfileUrl: "https://attach.bslqmdvk.cc/archives/188412/",
+      authorProfilePlatform: "黑料吃瓜网",
     },
   );
 });

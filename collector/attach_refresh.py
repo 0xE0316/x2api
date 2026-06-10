@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+from urllib.parse import urlparse, urlunparse
+
+from psycopg.types.json import Jsonb
+
+try:
+    from collector.attach_source import (
+        ATTACH_DEFAULT_BASE_URL,
+        ATTACH_SOURCE,
+        now_iso,
+        parse_detail_page,
+        verify_playback_url,
+    )
+except ModuleNotFoundError:
+    from attach_source import (
+        ATTACH_DEFAULT_BASE_URL,
+        ATTACH_SOURCE,
+        now_iso,
+        parse_detail_page,
+        verify_playback_url,
+    )
+
+
+def refresh_playback_urls(conn, limit: int, refresh_window_minutes: int, critical_window_minutes: int) -> dict[str, int]:
+    processed = refreshed = failed = skipped_static = 0
+    queries = [
+        (
+            """
+            SELECT i.*
+            FROM items i
+            INNER JOIN targets t ON t.id = i.target_id
+            WHERE t.source = %s
+              AND i.expires_at > NOW()
+              AND COALESCE((i.metadata->>'playback_refresh_required')::boolean, false) = TRUE
+              AND i.video_url_expires_at <= NOW() + (%s || ' minutes')::interval
+            ORDER BY i.video_url_expires_at ASC
+            LIMIT %s
+            """,
+            (ATTACH_SOURCE, critical_window_minutes, limit),
+        ),
+        (
+            """
+            SELECT i.*
+            FROM items i
+            INNER JOIN targets t ON t.id = i.target_id
+            WHERE t.source = %s
+              AND i.expires_at > NOW()
+              AND COALESCE((i.metadata->>'playback_refresh_required')::boolean, false) = TRUE
+              AND i.video_url_expires_at <= NOW() + (%s || ' minutes')::interval
+            ORDER BY i.video_url_expires_at ASC, i.published_at DESC
+            LIMIT %s
+            """,
+            (ATTACH_SOURCE, refresh_window_minutes, limit),
+        ),
+    ]
+    seen_ids: set[str] = set()
+    for sql, params in queries:
+        if processed >= limit:
+            break
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        for row in rows:
+            row_id = str(row["id"])
+            if row_id in seen_ids or processed >= limit:
+                continue
+            seen_ids.add(row_id)
+            processed += 1
+            metadata = row["metadata"] or {}
+            source_url = metadata.get("source_url") or row.get("link")
+            video_id = metadata.get("attach_video_id")
+            try:
+                if not source_url:
+                    detail_id = metadata.get("attach_detail_id") or str(row["guid"]).replace(f"{ATTACH_SOURCE}:", "", 1).split(":", 1)[0]
+                    parsed = urlparse(metadata.get("target_value") or ATTACH_DEFAULT_BASE_URL)
+                    origin = urlunparse((parsed.scheme or "https", parsed.netloc, "", "", "", ""))
+                    source_url = f"{origin.rstrip('/')}/archives/{detail_id}/"
+                if not source_url:
+                    raise ValueError("missing source_url")
+                detail = parse_detail_page(
+                    source_url,
+                    {
+                        "guid": row["guid"],
+                        "detail_id": metadata.get("attach_detail_id"),
+                        "url": source_url,
+                        "title": row.get("title"),
+                        "image": (row.get("images") or [None])[0] if isinstance(row.get("images"), list) else None,
+                        "published_at": row.get("published_at"),
+                        "tags": metadata.get("tags") or [],
+                    },
+                )
+                player = next((candidate for candidate in detail["players"] if candidate["video_id"] == video_id), detail["players"][0] if detail["players"] else None)
+                if not player:
+                    raise ValueError("matching player not found")
+                verified = verify_playback_url(player["video_url"], player.get("referer") or detail["url"], player["video_type"])
+                if not verified.get("playback_refresh_required"):
+                    skipped_static += 1
+                next_metadata = metadata | {
+                    "resolver": "attach-dplayer-video-url",
+                    "resolved_at": now_iso(),
+                    "source_url": detail["url"],
+                    "attach_detail_id": detail["detail_id"],
+                    "attach_video_id": player["video_id"],
+                    "attach_player_key": player.get("player_key"),
+                    "raw_video_url": verified.get("raw_video_url"),
+                    "variant_url": verified.get("variant_url"),
+                    "playback_headers": verified.get("playback_headers"),
+                    "video_url_expires_at": verified["video_url_expires_at"].isoformat(),
+                    "playback_refresh_required": verified.get("playback_refresh_required"),
+                    "media_format": verified.get("media_format"),
+                    "video_poster_url": detail.get("image") or metadata.get("video_poster_url"),
+                    "tags": list(dict.fromkeys([*(detail.get("tags") or []), *(player.get("tags") or [])]))[:20],
+                    "date_modified": detail.get("modified_at").isoformat() if detail.get("modified_at") else metadata.get("date_modified"),
+                    "playlist_duration_seconds": verified.get("playlist_duration_seconds"),
+                    "playlist_bytes": verified.get("playlist_bytes"),
+                    "master_playlist_bytes": verified.get("master_playlist_bytes"),
+                    "media_url_count": verified.get("media_url_count"),
+                    "key_url_count": verified.get("key_url_count"),
+                    "encrypted": verified.get("encrypted"),
+                    "content_type": verified.get("content_type"),
+                    "content_length": verified.get("content_length"),
+                }
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE items
+                        SET video_url = %s,
+                            video_url_expires_at = %s,
+                            metadata = %s,
+                            stored_at = stored_at
+                        WHERE id = %s
+                        """,
+                        (verified["video_url"], verified["video_url_expires_at"], Jsonb(next_metadata), row["id"]),
+                    )
+                refreshed += 1
+            except Exception as exc:
+                failed += 1
+                print(f"[attach] refresh failed for {row['guid']}: {exc}")
+            conn.commit()
+    return {"processed": processed, "refreshed": refreshed, "failed": failed, "skipped_static": skipped_static}

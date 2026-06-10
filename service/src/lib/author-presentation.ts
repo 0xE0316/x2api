@@ -35,6 +35,7 @@ const DETAIL_LINK_PROFILE_PLATFORMS: Record<string, string> = {
   "705hs": "992KP",
   xxxtik: "xxxtik",
   affair: "911爆料",
+  attach: "黑料吃瓜网",
   dirtyship: "DirtyShip",
   influencersgonewild: "InfluencersGoneWild",
   missav: "MISSAV",
@@ -125,6 +126,11 @@ export function normalizePresentationSource(value: string) {
     case "911bl.com":
     case "affair.zhkrsawaw.cc":
       return "affair";
+    case "attach":
+    case "attach.bslqmdvk.cc":
+    case "hlcgw":
+    case "hlcgw.com":
+      return "attach";
     case "dirtyship":
     case "dirtyship.com":
       return "dirtyship";
@@ -226,6 +232,8 @@ function sourceDisplayName(source: string) {
       return "xxxtik";
     case "affair":
       return "911爆料";
+    case "attach":
+      return "黑料吃瓜网";
     case "dirtyship":
       return "DirtyShip";
     case "influencersgonewild":
