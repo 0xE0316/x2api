@@ -466,7 +466,7 @@ def parse_detail_page(detail_url: str, list_item: dict | None = None) -> dict:
         }:
             continue
         player_key = clean_text(config.get("_attach_player_key"))
-        player_video_id = player_key or f"{detail_id}{index:03d}"
+        player_video_id = f"{detail_id}{index:03d}"
         player_title = title
         players.append(
             {

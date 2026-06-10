@@ -113,7 +113,7 @@ class AttachSourceTests(unittest.TestCase):
             detail = attach.parse_detail_page("https://attach.bslqmdvk.cc/archives/188412/")
 
         self.assertEqual(len(detail["players"]), 1)
-        self.assertEqual(detail["players"][0]["guid"], f"attach:188412:{player_key}")
+        self.assertEqual(detail["players"][0]["guid"], "attach:188412:188412001")
         self.assertEqual(detail["players"][0]["video_url"], config["video"]["url"])
         self.assertEqual(detail["players"][0]["player_key"], player_key)
 
