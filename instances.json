@@ -4,10 +4,6 @@
     "priority": 0
   },
   {
-    "url": "https://nitter.net",
-    "priority": -100
-  },
-  {
     "url": "https://nitter.catsarch.com",
     "priority": 0
   },
@@ -24,6 +20,10 @@
     "priority": 0
   },
   {
+    "url": "https://nitter.net",
+    "priority": -100
+  },
+  {
     "url": "https://lightbrd.com",
     "priority": 100
   },
@@ -32,7 +32,7 @@
     "priority": 0
   },
   {
-    "url": "https://nitter.poast.org",
-    "priority": 50
+    "url": "https://nuku.trabun.org",
+    "priority": 0
   }
 ]
